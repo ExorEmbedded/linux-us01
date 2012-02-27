@@ -157,7 +157,7 @@ static int __init am3517evm_soc_init(void)
 {
 	int ret;
 
-	if (!machine_is_omap3517evm())
+	if (!machine_is_omap3517evm()||!machine_is_omap3517un31())
 		return -ENODEV;
 	pr_info("OMAP3517 / AM3517 EVM SoC init\n");
 

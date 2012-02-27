@@ -22,9 +22,9 @@
 
 #include <plat/display.h>
 
-static struct omap_video_timings generic_panel_timings = {
+/*static struct omap_video_timings generic_panel_timings = {*/ //STE
 	/* 640 x 480 @ 60 Hz  Reduced blanking VESA CVT 0.31M3-R */
-	.x_res		= 640,
+/*	.x_res		= 640, //STE
 	.y_res		= 480,
 	.pixel_clock	= 23500,
 	.hfp		= 48,
@@ -33,7 +33,21 @@ static struct omap_video_timings generic_panel_timings = {
 	.vfp		= 3,
 	.vsw		= 4,
 	.vbp		= 7,
+};*/
+
+//STE
+static struct omap_video_timings generic_panel_timings = {
+	.x_res		= 480,
+	.y_res		= 272,
+	.pixel_clock	= 12000,
+	.hfp		= 41,
+	.hsw		= 3,
+	.hbp		= 1,
+	.vfp		= 10,
+	.vsw		= 1,
+	.vbp		= 3,
 };
+//STE end
 
 static int generic_panel_power_on(struct omap_dss_device *dssdev)
 {

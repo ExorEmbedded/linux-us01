@@ -1421,10 +1421,22 @@ config SERIAL_OMAP
 	  By enabling this option you take advantage of dma feature available
 	  with the omap-serial driver. DMA support can be enabled from platform
 	  data.
+	  
+config SERIAL_OMAP_PROGRAMMABLE
+	tristate "OMAP programmable serial port support"
+	depends on ARCH_OMAP2 || ARCH_OMAP3 || ARCH_OMAP4 || ARCH_TI81XX
+	select SERIAL_CORE
+	help
+	  If you have a machine based on an Texas Instruments OMAP CPU you
+	  can enable its onboard serial ports by enabling this option.
+
+	  By enabling this option you take advantage of dma feature available
+	  with the omap-serial driver. DMA support can be enabled from platform
+	  data.	  
 
 config SERIAL_OMAP_CONSOLE
 	bool "Console on OMAP serial port"
-	depends on SERIAL_OMAP
+	depends on SERIAL_OMAP || SERIAL_OMAP_PROGRAMMABLE
 	select SERIAL_CORE_CONSOLE
 	help
 	  Select this option if you would like to use omap serial port as

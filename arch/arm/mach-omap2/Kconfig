@@ -198,6 +198,13 @@ config MACH_OMAP3517EVM
 	default y
 	select OMAP_PACKAGE_CBB
 
+config MACH_OMAP3517UN31
+	bool "OMAP3517/ AM3517 UN31 board"
+	depends on ARCH_OMAP3
+	select OMAP_PACKAGE_CBB
+	help
+	  Say yes here if you are using the Sitek UN31 board.
+
 config MACH_CRANEBOARD
 	bool "AM3517/05 CRANE board"
 	depends on ARCH_OMAP3

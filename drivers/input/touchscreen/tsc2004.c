@@ -30,8 +30,8 @@
 #include <linux/i2c/tsc2004.h>
 
 
-#define TS_POLL_DELAY			1 /* ms delay between samples */
-#define TS_POLL_PERIOD			1 /* ms delay between samples */
+#define TS_POLL_DELAY			10 /* ms delay between samples */
+#define TS_POLL_PERIOD			10 /* ms delay between samples */
 
 /* Control byte 0 */
 #define TSC2004_CMD0(addr, pnd, rw) ((addr<<3)|(pnd<<1)|rw)
@@ -127,6 +127,12 @@ enum resolution_mode {
 #define	MAX_12BIT		((1 << 12) - 1)
 #define MEAS_MASK		0xFFF
 
+//STE
+#define SNS_CFG 		(7<<2)
+#define PR_CFG			(7<<5)
+#define PV_CFG			(4<<0)
+#define CL_CFG			(3<<3)
+
 struct ts_event {
 	u16	x;
 	u16	y;
@@ -200,14 +206,19 @@ static int tsc2004_prepare_for_reading(struct tsc2004 *ts)
 	cmd = TSC2004_CMD0(CFR2_REG, PND0_FALSE, WRITE_REG);
 	data = PINTS1 | PINTS0 | MEDIAN_VAL_FLTR_SIZE_15 |
 		AVRG_VAL_FLTR_SIZE_7_8 | MAV_FLTR_EN_X | MAV_FLTR_EN_Y |
-		MAV_FLTR_EN_Z;
+		MAV_FLTR_EN_Z; //STE ORIG
+
+//	data = MEDIAN_VAL_FLTR_SIZE_15 |
+//			AVRG_VAL_FLTR_SIZE_7_8 | MAV_FLTR_EN_X | MAV_FLTR_EN_Y; //STE WIN
 	err = tsc2004_write_word_data(ts, cmd, data);
 	if (err < 0)
 		return err;
 
 	/* Configure the TSC in TSMode 1 */
 	cmd = TSC2004_CMD0(CFR0_REG, PND0_FALSE, WRITE_REG);
-	data = PEN_STS_CTRL_MODE | ADC_CLK_2MHZ | PANEL_VLTG_STB_TIME_1MS;
+	data = PEN_STS_CTRL_MODE | ADC_CLK_2MHZ | PANEL_VLTG_STB_TIME_1MS;//STE ORIG
+
+//	data = 0x9CFC; //STE WIN
 	err = tsc2004_write_word_data(ts, cmd, data);
 	if (err < 0)
 		return err;
@@ -309,13 +320,13 @@ static void tsc2004_work(struct work_struct *work)
 			ts->pendown = false;
 			goto out;
 		}
-
 		dev_dbg(&ts->client->dev, "pen is still down\n");
 	}
 
 	tsc2004_read_values(ts, &tc);
 
 	rt = tsc2004_calculate_pressure(ts, &tc);
+//printk(KERN_INFO "PRESSURE CALCULATED %d!\n", rt); //STE
 	if (rt > MAX_12BIT) {
 		/*
 		 * Sample found inconsistent by debouncing or pressure is
@@ -341,6 +352,7 @@ static void tsc2004_work(struct work_struct *work)
 		input_report_abs(input, ABS_Y, tc.y);
 		input_report_abs(input, ABS_PRESSURE, rt);
 
+//printk(KERN_INFO "SYNCING point(%4d,%4d), pressure (%4u)\n", tc.x, tc.y, rt); //STE
 		input_sync(input);
 
 		dev_dbg(&ts->client->dev, "point(%4d,%4d), pressure (%4u)\n",

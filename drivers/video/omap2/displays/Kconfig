@@ -20,6 +20,14 @@ config PANEL_SHARP_LQ043T1DG01
         help
           LCD Panel used in TI's OMAP3517 EVM boards
 
+config PANEL_GENERIC_NETLINK
+        tristate "Generic LCD Panel with netlink support"
+        depends on OMAP2_DSS
+        help
+          LCD Panel used in Sitek's boards. Display parameters 
+          can be set using netlink socket, but only when FB_OMAP2 
+          is compiled as module. 
+
 config PANEL_TAAL
         tristate "Taal DSI Panel"
         depends on OMAP2_DSS_DSI
