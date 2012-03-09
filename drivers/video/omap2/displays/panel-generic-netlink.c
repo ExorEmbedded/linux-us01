@@ -113,7 +113,7 @@ static int sharp_lq_panel_power_on(struct omap_dss_device *dssdev)
 		goto err0;
 
 	/* wait couple of vsyncs until enabling the LCD */
-	msleep(50);
+//	msleep(50); //STE Avoid delay for those displays that need a different enable sequence
 
 	if (dssdev->platform_enable) {
 		r = dssdev->platform_enable(dssdev);
@@ -144,7 +144,6 @@ static void sharp_lq_panel_power_off(struct omap_dss_device *dssdev)
 
 static int generic_netlink_panel_probe(struct omap_dss_device *dssdev)
 {
-
     dssdev->panel.config = OMAP_DSS_LCD_TFT | OMAP_DSS_LCD_IVS |
 				OMAP_DSS_LCD_IHS;
 	dssdev->panel.acb = 0x0;
@@ -197,6 +196,24 @@ static int generic_netlink_panel_resume(struct omap_dss_device *dssdev)
 	return 0;
 }
 
+static void generic_netlink_panel_set_timings(struct omap_dss_device *dssdev,
+		struct omap_video_timings *timings)
+{
+	dpi_set_timings(dssdev, timings);
+}
+
+static void generic_netlink_panel_get_timings(struct omap_dss_device *dssdev,
+		struct omap_video_timings *timings)
+{
+	*timings = dssdev->panel.timings;
+}
+
+static int generic_netlink_panel_check_timings(struct omap_dss_device *dssdev,
+		struct omap_video_timings *timings)
+{
+	return dpi_check_timings(dssdev, timings);
+}
+
 static struct omap_dss_driver generic_netlink_panel_driver = {
 	.probe		= generic_netlink_panel_probe,
 	.remove		= generic_netlink_panel_remove,
@@ -205,6 +222,10 @@ static struct omap_dss_driver generic_netlink_panel_driver = {
 	.disable	= generic_netlink_panel_disable,
 	.suspend	= generic_netlink_panel_suspend,
 	.resume		= generic_netlink_panel_resume,
+
+	.set_timings	= generic_netlink_panel_set_timings,
+	.get_timings	= generic_netlink_panel_get_timings,
+	.check_timings	= generic_netlink_panel_check_timings,
 
 	.driver         = {
 		.name   = "generic_netlink_panel",
@@ -231,28 +252,34 @@ static struct omap_dss_driver generic_netlink_panel_driver = {
 		printk(KERN_INFO "Received generic netlink message hs_fp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_FP]));
 		printk(KERN_INFO "Received generic netlink message hs_bp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_BP]));
 		printk(KERN_INFO "Received generic netlink message hs_w: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_W]));
-		printk(KERN_INFO "Received generic netlink message hs_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_INV]));
+		printk(KERN_INFO "Received generic netlink message hs_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_INV])); //IHS
 		printk(KERN_INFO "Received generic netlink message vs_fp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_FP]));
 		printk(KERN_INFO "Received generic netlink message vs_bp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_BP]));
 		printk(KERN_INFO "Received generic netlink message vs_w: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_W]));
-		printk(KERN_INFO "Received generic netlink message vs_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_INV]));
-		printk(KERN_INFO "Received generic netlink message blank_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV]));
+		printk(KERN_INFO "Received generic netlink message vs_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_INV])); //IVS
+		printk(KERN_INFO "Received generic netlink message blank_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV])); //IEO
 		printk(KERN_INFO "Received generic netlink message pclk_freq: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_FREQ]));
-		printk(KERN_INFO "Received generic netlink message pclk_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_INV]));
+		printk(KERN_INFO "Received generic netlink message pclk_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_INV])); //IPC
 		printk(KERN_INFO "Received generic netlink message inverter_name: %s\n", (char *)nla_data(info->attrs[DISPLAY_CONFIG_A_INVERTER_NAME]));
 
+
+		//ONOFF sempre a 1
 		generic_netlink_panel_timings.x_res = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZX]);
 		generic_netlink_panel_timings.y_res = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZY]);
 
-		generic_netlink_panel_timings.pixel_clock	= (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_FREQ])*1000;
+		generic_netlink_panel_timings.pixel_clock = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_FREQ])*1000;
 
-		generic_netlink_panel_timings.hsw	= (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_W]);
-		generic_netlink_panel_timings.hfp	= (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_FP]);
-		generic_netlink_panel_timings.hbp	= (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_BP]);
+		generic_netlink_panel_timings.hsw = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_W]);
+		generic_netlink_panel_timings.hfp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_FP]);
+		generic_netlink_panel_timings.hbp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_BP]);
 
-		generic_netlink_panel_timings.vsw	= (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_W]);
-		generic_netlink_panel_timings.vfp	= (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_FP]);
-		generic_netlink_panel_timings.vbp	= (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_BP]);
+		generic_netlink_panel_timings.vsw = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_W]);
+		generic_netlink_panel_timings.vfp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_FP]);
+		generic_netlink_panel_timings.vbp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_BP]);
+
+//		omap_dss_lcd_ivs = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_INV]); //STE
+//		omap_dss_lcd_ihs = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV]); //STE
+//		omap_dss_lcd_ipc = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_INV]); //STE
 
 		return omap_dss_register_driver(&generic_netlink_panel_driver);
  }
@@ -310,7 +337,7 @@ static int __init generic_netlink_panel_drv_init(void)
 	if (rf != 0 || ro != 0)
 		return omap_dss_register_driver(&generic_netlink_panel_driver);
 #endif
-	//TODO: check if it a correct return value
+	//TODO: check if it is a correct return value
 	return 0;
 }
 
