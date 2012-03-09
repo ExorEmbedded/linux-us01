@@ -586,7 +586,7 @@ static void __init am3517_evm_init_irq(void)
 	omap2_init_common_devices(NULL, NULL);
 	omap_init_irq();
 	gpmc_init();
-}
+};
 
 static struct omap_musb_board_data musb_board_data = {
 	.interface_type         = MUSB_INTERFACE_ULPI,
@@ -738,8 +738,8 @@ static struct platform_device am3517_evm_norflash_device = {
 
 static void __init am3517_nor_init(void)
 {
-	int cs;
-	int norcs;
+	int cs = 0;
+	int norcs = GPMC_CS_NUM +1;
 
 	/* find out the chip-select on which NOR exists */
 	while (cs < GPMC_CS_NUM) {
