@@ -157,32 +157,32 @@ static inline void serial_omap_update_rts(struct uart_omap_port *up)
 			if (rts_on_send) {
 				mcr |= UART_MCR_RTS;
 
-				if (up->dxen_gpio != -EINVAL) {
-					gpio_set_value(up->rxen_gpio, 0);
-					gpio_set_value(up->dxen_gpio, 1);
+				if (up->gpio_dxen != -EINVAL) {
+					gpio_set_value(up->gpio_rxen, 0);
+					gpio_set_value(up->gpio_dxen, 1);
 				}
 			} else {
 				mcr &= ~UART_MCR_RTS;
 
-				if (up->dxen_gpio != -EINVAL) {
-					gpio_set_value(up->rxen_gpio, 1);
-					gpio_set_value(up->dxen_gpio, 1);
+				if (up->gpio_dxen != -EINVAL) {
+					gpio_set_value(up->gpio_rxen, 1);
+					gpio_set_value(up->gpio_dxen, 1);
 				}
 			}
 		} else {
 			if (rts_on_send) {
 				mcr &= ~UART_MCR_RTS;
 
-				if (up->dxen_gpio != -EINVAL) {
-					gpio_set_value(up->dxen_gpio, 0);
-					gpio_set_value(up->rxen_gpio, 1);
+				if (up->gpio_dxen != -EINVAL) {
+					gpio_set_value(up->gpio_dxen, 0);
+					gpio_set_value(up->gpio_rxen, 1);
 				}
 			} else {
 				mcr |= UART_MCR_RTS;
 
-				if (up->dxen_gpio != -EINVAL) {
-					gpio_set_value(up->dxen_gpio, 1);
-					gpio_set_value(up->rxen_gpio, 1);
+				if (up->gpio_dxen != -EINVAL) {
+					gpio_set_value(up->gpio_dxen, 1);
+					gpio_set_value(up->gpio_rxen, 1);
 				}
 			}
 		}
@@ -972,11 +972,11 @@ serial_omap_type(struct uart_port *port)
 	return up->name;
 }
 
-#ifdef CONFIG_SERIAL_OMAP_CONSOLE
+//#ifdef CONFIG_SERIAL_OMAP_CONSOLE //STE
 
-static struct uart_omap_port *serial_omap_console_ports[4];
+//static struct uart_omap_port *serial_omap_console_ports[4]; //STE
 
-static struct uart_driver serial_omap_reg;
+//static struct uart_driver serial_omap_reg; //STE
 
 #define BOTH_EMPTY (UART_LSR_TEMT | UART_LSR_THRE)
 
@@ -1010,6 +1010,36 @@ static inline void wait_for_xmitr(struct uart_omap_port *up)
 		}
 	}
 }
+
+//STE
+#ifdef CONFIG_CONSOLE_POLL
+
+static void serial_omap_poll_put_char(struct uart_port *port, unsigned char ch)
+{
+	struct uart_omap_port *up = (struct uart_omap_port *)port;
+	wait_for_xmitr(up);
+	serial_out(up, UART_TX, ch);
+}
+
+static int serial_omap_poll_get_char(struct uart_port *port)
+{
+	struct uart_omap_port *up = (struct uart_omap_port *)port;
+	unsigned int status = serial_in(up, UART_LSR);
+
+	if (!(status & UART_LSR_DR))
+		return NO_POLL_CHAR;
+
+	return serial_in(up, UART_RX);
+}
+
+#endif /* CONFIG_CONSOLE_POLL */
+
+#ifdef CONFIG_SERIAL_OMAP_CONSOLE
+
+static struct uart_omap_port *serial_omap_console_ports[4];
+
+static struct uart_driver serial_omap_reg;
+//STE end
 
 static void serial_omap_console_putchar(struct uart_port *port, int ch)
 {
@@ -1125,19 +1155,20 @@ serial_omap_ioctl(struct uart_port *port, unsigned int cmd, unsigned long arg)
 
 		rs485conf.flags &= OMAP_RS485_SUPPORTED;
 		spin_lock_irqsave(&up->port.lock, flags);
+		gpio_direction_output(up->gpio_dxen, 0);
 		if (!(rs485conf.flags & SER_RS485_ENABLED)) {
 			up->tx_in_progress = 0;
 			up->tx_wait_end = 0;
-			gpio_set_value(up->mode_gpio, 0); /* RS232 */
+			gpio_set_value(up->gpio_mode, 0); /* RS232 */
 		}
 		else
-			gpio_set_value(up->mode_gpio, 1); /* RS485/RS422 */
+			gpio_set_value(up->gpio_mode, 1); /* RS485/RS422 */
 
 		up->rs485 = rs485conf;
 		serial_omap_update_rts(up);
 		serial_omap_thri_mode(up);
 		spin_unlock_irqrestore(&up->port.lock, flags);
-
+		break;
 	case TIOCGRS485:
 		if (copy_to_user((struct serial_rs485 *) arg,
 					&(up->rs485), sizeof(rs485conf)))
@@ -1169,6 +1200,11 @@ static struct uart_ops serial_omap_pops = {
 	.request_port	= serial_omap_request_port,
 	.config_port	= serial_omap_config_port,
 	.verify_port	= serial_omap_verify_port,
+#ifdef CONFIG_CONSOLE_POLL //STE
+	.poll_put_char  = serial_omap_poll_put_char, //STE
+	.poll_get_char  = serial_omap_poll_get_char, //STE
+#endif //STE
+
 };
 
 static struct uart_driver serial_omap_reg = {
@@ -1413,52 +1449,47 @@ static int serial_omap_probe(struct platform_device *pdev)
 		up->uart_dma.rx_dma_channel = OMAP_UART_DMA_CH_FREE;
 	}
 
-	if(pdev->id == 2) {
-		up->dxen_gpio = 149;
-		up->rxen_gpio = 148;
-		up->mode_gpio = 63;
-	} else {
-		up->dxen_gpio = -EINVAL;
-		up->rxen_gpio = -EINVAL;
-		up->mode_gpio = -EINVAL;
-	}
-
-	if(up->dxen_gpio != -EINVAL && up->rxen_gpio != -EINVAL && up->mode_gpio != -EINVAL)
+	if(omap_up_info->gpio_dxen != -EINVAL && omap_up_info->gpio_rxen != -EINVAL && omap_up_info->gpio_mode != -EINVAL)
 	{
 		int ret = 0;
 
-		ret = gpio_request(up->dxen_gpio, "dxen_gpio");
-		if (ret < 0) {
-			printk(KERN_WARNING "failed to request GPIO#%d: %d\n", up->dxen_gpio, ret);
-			return -EINVAL;
-		}
-		gpio_direction_output(up->dxen_gpio, 0);
+		up->gpio_dxen = omap_up_info->gpio_dxen;
+		up->gpio_rxen = omap_up_info->gpio_rxen;
+		up->gpio_mode = omap_up_info->gpio_mode;
 
-		ret = gpio_request(up->rxen_gpio, "rxen_gpio");
-		if (ret < 0) {
-			printk(KERN_WARNING "failed to request GPIO#%d: %d\n", up->rxen_gpio, ret);
-			return -EINVAL;
-		}
-		gpio_direction_output(up->rxen_gpio, 1);
+		ret = gpio_request(up->gpio_dxen, "gpio_dxen");
 
-		ret = gpio_request(up->mode_gpio, "mode_gpio");
 		if (ret < 0) {
-			printk(KERN_WARNING "failed to request GPIO#%d: %d\n", up->mode_gpio, ret);
+			printk(KERN_WARNING "failed to request GPIO#%d: %d\n", up->gpio_dxen, ret);
 			return -EINVAL;
 		}
-		gpio_direction_output(up->mode_gpio, 0);
+//		gpio_direction_output(up->gpio_dxen, 0);
+
+		ret = gpio_request(up->gpio_rxen, "gpio_rxen");
+		if (ret < 0) {
+			printk(KERN_WARNING "failed to request GPIO#%d: %d\n", up->gpio_rxen, ret);
+			return -EINVAL;
+		}
+		gpio_direction_output(up->gpio_rxen, 1);
+
+		ret = gpio_request(up->gpio_mode, "gpio_mode");
+		if (ret < 0) {
+			printk(KERN_WARNING "failed to request GPIO#%d: %d\n", up->gpio_mode, ret);
+			return -EINVAL;
+		}
+		gpio_direction_output(up->gpio_mode, 0);
+
 	}
 
-	if(pdev->id == 2) {
-		/* Setting RS232
-		gpio_set_value(up->dxen_gpio, 1);
-		up->rs485.flags = 0; */
+	/* Setting RS232 */
+	//gpio_set_value(up->gpio_dxen, 1);
+	up->rs485.flags = 0;
 
-		gpio_set_value(up->mode_gpio, 1); /* RS485/RS422 */
-		up->rs485.flags |= OMAP_RS485_SUPPORTED;
-		serial_omap_update_rts(up);
-		serial_omap_thri_mode(up);
-	}
+	/* RS485/RS422 */
+	/*gpio_set_value(up->gpio_mode, 1);
+	up->rs485.flags |= OMAP_RS485_SUPPORTED;
+	serial_omap_update_rts(up);
+	serial_omap_thri_mode(up);*/
 
 	ui[pdev->id] = up;
 	serial_omap_add_console_port(up);

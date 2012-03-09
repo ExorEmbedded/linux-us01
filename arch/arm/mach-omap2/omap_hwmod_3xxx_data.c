@@ -906,7 +906,8 @@ static struct omap_hwmod_class_sysconfig omap3xxx_gpio_sysc = {
 	.sysc_offs	= 0x0010,
 	.syss_offs	= 0x0014,
 	.sysc_flags	= (SYSC_HAS_ENAWAKEUP | SYSC_HAS_SIDLEMODE |
-			   SYSC_HAS_SOFTRESET | SYSC_HAS_AUTOIDLE |
+//			   SYSC_HAS_SOFTRESET | SYSC_HAS_AUTOIDLE | //STE Disable softreset to avoid boot hang with HSE03/ETOP507
+			   SYSC_HAS_AUTOIDLE |						//STE
 			   SYSS_HAS_RESET_STATUS),
 	.idlemodes	= (SIDLE_FORCE | SIDLE_NO | SIDLE_SMART),
 	.sysc_fields    = &omap_hwmod_sysc_type1,
@@ -1433,7 +1434,6 @@ static __initdata struct omap_hwmod *am35xx_hwmods[] = {
 int __init omap3xxx_hwmod_init(void)
 {
 	if (cpu_is_omap3505() || cpu_is_omap3517()) {
-
 		/* TODO: Find better way to get this done.
 		 *
 		 * AM35xx doesn't support smartreflex. This requires:

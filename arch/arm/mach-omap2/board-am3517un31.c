@@ -52,20 +52,49 @@
 //#include <media/ti-media/vpfe_capture.h>
 //#include <media/tvp514x.h>
 
+#include <plat/omap-serial.h>
 #include <plat/mcspi.h>//STE
 #include <linux/spi/spi.h>//STE
 #include <linux/spi/eeprom.h>//STE
 //#include "mmc-am3517evm.h"
+
+#include <linux/leds.h>
 
 #include "mux.h"
 #include "control.h"
 #include "hsmmc.h"
 #include "board-flash.h"
 
+#define UN31_GPIO_LED_GREEN 158
+#define UN31_GPIO_LED_RED 161
 #define AM35XX_EVM_MDIO_FREQUENCY	(1000000)
 
-#define GPMC_CS0_BASE  0x60
-#define GPMC_CS_SIZE   0x30
+//#define GPMC_CS0_BASE  0x60 //STE
+//#define GPMC_CS_SIZE   0x30 //STE
+
+static struct gpio_led gpio_leds[] = {
+	{
+		.name	= "led:green",
+		.gpio	= UN31_GPIO_LED_GREEN,
+	},
+	{
+		.name	= "led:red",
+		.gpio	= UN31_GPIO_LED_RED,
+	},
+};
+
+static struct gpio_led_platform_data gpio_led_info = {
+	.leds		= gpio_leds,
+	.num_leds	= ARRAY_SIZE(gpio_leds),
+};
+
+static struct platform_device leds_gpio = {
+	.name	= "leds-gpio",
+	.id	= -1,
+	.dev	= {
+		.platform_data	= &gpio_led_info,
+	},
+};
 
 static struct mdio_platform_data am3517_evm_mdio_pdata = {
 	.bus_freq	= AM35XX_EVM_MDIO_FREQUENCY,
@@ -181,6 +210,7 @@ static void am3517_evm_ethernet_init(struct emac_platform_data *pdata)
 	am3517_emac_device.dev.platform_data	= pdata;
 	platform_device_register(&am3517_mdio_device);
 	platform_device_register(&am3517_emac_device);
+	platform_device_register(&leds_gpio);
 	clk_add_alias(NULL, dev_name(&am3517_mdio_device.dev),
 		      NULL, &am3517_emac_device.dev);
 
@@ -253,8 +283,8 @@ static int lcd_enabled;
 
 static void __init am3517_evm_display_init(void)
 {
-#if defined(CONFIG_PANEL_SHARP_LQ043T1DG01) || \
-		defined(CONFIG_PANEL_SHARP_LQ043T1DG01_MODULE)
+#if defined(CONFIG_PANEL_GENERIC_NETLINK) || \
+		defined(CONFIG_PANEL_GENERIC_NETLINK_MODULE)
 	int r;
 
 	//omap_mux_init_gpio(LCD_PANEL_PWR, OMAP_PIN_INPUT_PULLUP);
@@ -309,6 +339,7 @@ static int am3517_evm_panel_enable_lcd(struct omap_dss_device *dssdev)
 {
 	//Enable the panel
 	gpio_set_value(LCD_PANEL_PWR, 1);//STE
+	msleep(200);
 	//Enable the backlight
 	gpio_set_value(LCD_PANEL_BKLIGHT_PWR, 1);//STE
 	lcd_enabled = 1;
@@ -503,7 +534,7 @@ static struct i2c_board_info __initdata am3517evm_i2c2_boardinfo[] = {
 
 static int __init am3517_evm_i2c_init(void)
 {
-	omap_register_i2c_bus(1, 400, NULL, 0);
+//	omap_register_i2c_bus(1, 400, NULL, 0);
 	omap_register_i2c_bus(2, 100, NULL, 0);
 //	omap_register_i2c_bus(3, 400, am3517evm_ui_tca6516_info,
 //			ARRAY_SIZE(am3517evm_ui_tca6516_info)); //STE PROD
@@ -738,9 +769,11 @@ static void __init am3517_nor_init(void)
 #ifdef CONFIG_OMAP_MUX
 static struct omap_board_mux board_mux[] __initdata = {
 	/* USB OTG DRVVBUS offset = 0x212 */
-	OMAP3_MUX(CHASSIS_DMAREQ3, OMAP_MUX_MODE0 | OMAP_PIN_INPUT_PULLDOWN),
+	/*OMAP3_MUX(CHASSIS_DMAREQ3, OMAP_MUX_MODE0 | OMAP_PIN_INPUT_PULLDOWN),
 	OMAP3_MUX(MCBSP_CLKS, OMAP_MUX_MODE4 | OMAP_PIN_INPUT_PULLUP),
-	OMAP3_MUX(GPMC_NCS4, OMAP_MUX_MODE4 | OMAP_PIN_INPUT_PULLDOWN),
+	OMAP3_MUX(GPMC_NCS4, OMAP_MUX_MODE4 | OMAP_PIN_INPUT_PULLDOWN),*/
+	OMAP3_MUX(MCBSP1_DX, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),
+	OMAP3_MUX(MCBSP1_FSX, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),
 	{ .reg_offset = OMAP_MUX_TERMINATOR },
 };
 #else
@@ -812,6 +845,25 @@ static struct omap2_hsmmc_info mmc[] = {
 	{}      /* Terminator */
 };
 
+static struct omap_uart_port_info omap_uart[]= {
+	{
+		.gpio_dxen = -EINVAL,
+		.gpio_rxen = -EINVAL,
+		.gpio_mode = -EINVAL,
+	},
+	{
+		.gpio_dxen = -EINVAL,
+		.gpio_rxen = -EINVAL,
+		.gpio_mode = -EINVAL,
+	},
+	{
+		.gpio_dxen = 184, //149,
+		.gpio_rxen = 170, //148,
+		.gpio_mode = 185, //63,
+	},
+	{}	   /* Terminator */
+};
+
 static void __init am3517_evm_init(void)
 {
 	/* SPI FRAM init */ //STE
@@ -821,7 +873,7 @@ static void __init am3517_evm_init(void)
 	omap_mux_init_signal("mcspi1_cs0", OMAP_MUX_MODE0 | OMAP_PIN_OUTPUT);//STE
 	omap_mux_init_signal("mcspi1_cs1", OMAP_MUX_MODE0 |OMAP_PIN_OUTPUT);//STE
 
-//	omap3_mux_init(board_mux, OMAP_PACKAGE_CBB);//STE
+	omap3_mux_init(board_mux, OMAP_PACKAGE_CBB);
 	am3517_evm_i2c_init();
 
 	platform_add_devices(am3517_evm_devices,
@@ -829,7 +881,8 @@ static void __init am3517_evm_init(void)
 
 	spi_register_board_info(spidev_board_info, ARRAY_SIZE(spidev_board_info));//STE
 
-	omap_serial_init();
+	//omap_serial_init();//STE
+	omap_serial_board_init(omap_uart);
 
 	/* Configure GPIO for EHCI port */
 	omap_mux_init_gpio(57, OMAP_PIN_OUTPUT);

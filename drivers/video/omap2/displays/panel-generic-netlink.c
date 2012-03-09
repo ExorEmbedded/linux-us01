@@ -101,6 +101,13 @@ static struct omap_video_timings generic_netlink_panel_timings = {
 	.vbp		= 26,
 };
 
+//static long omap_dss_lcd_ivs; //STE
+//static long	omap_dss_lcd_ihs; //STE
+//static long	omap_dss_lcd_ipc; //STE
+//static long omap_dss_lcd_ieo; //STE
+//static long omap_dss_lcd_rf; //STE
+//static long omap_dss_lcd_onoff; //STE
+
 static int sharp_lq_panel_power_on(struct omap_dss_device *dssdev)
 {
 	int r;
