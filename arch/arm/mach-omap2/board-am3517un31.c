@@ -52,6 +52,8 @@
 //#include <media/ti-media/vpfe_capture.h>
 //#include <media/tvp514x.h>
 
+#include <plat/pwm.h>//STE
+
 #include <plat/omap-serial.h>
 #include <plat/mcspi.h>//STE
 #include <linux/spi/spi.h>//STE
@@ -71,6 +73,28 @@
 
 //#define GPMC_CS0_BASE  0x60 //STE
 //#define GPMC_CS_SIZE   0x30 //STE
+
+static struct omap2_pwm_platform_config pwm_config = {
+    .timer_id           = 10,   // GPT10_PWM_EVT
+    .polarity           = 1     // Active-high
+};
+
+static struct platform_device pwm_device = {
+    .name               = "omap-pwm",
+    .id                 = 0,
+    .dev                = {
+        .platform_data  = &pwm_config
+    }
+};
+
+/* beeper */
+static struct platform_device pwm_beeper = {
+	.name = "pwm-beeper",
+	.id = -1,
+	.dev = {
+		.platform_data = (void *)0,
+	},
+};
 
 static struct gpio_led gpio_leds[] = {
 	{
@@ -210,7 +234,6 @@ static void am3517_evm_ethernet_init(struct emac_platform_data *pdata)
 	am3517_emac_device.dev.platform_data	= pdata;
 	platform_device_register(&am3517_mdio_device);
 	platform_device_register(&am3517_emac_device);
-	platform_device_register(&leds_gpio);
 	clk_add_alias(NULL, dev_name(&am3517_mdio_device.dev),
 		      NULL, &am3517_emac_device.dev);
 
@@ -586,7 +609,7 @@ static void __init am3517_evm_init_irq(void)
 	omap2_init_common_devices(NULL, NULL);
 	omap_init_irq();
 	gpmc_init();
-};
+}
 
 static struct omap_musb_board_data musb_board_data = {
 	.interface_type         = MUSB_INTERFACE_ULPI,
@@ -739,7 +762,7 @@ static struct platform_device am3517_evm_norflash_device = {
 static void __init am3517_nor_init(void)
 {
 	int cs = 0;
-	int norcs = GPMC_CS_NUM +1;
+	int norcs = GPMC_CS_NUM + 1;
 
 	/* find out the chip-select on which NOR exists */
 	while (cs < GPMC_CS_NUM) {
@@ -774,6 +797,7 @@ static struct omap_board_mux board_mux[] __initdata = {
 	OMAP3_MUX(GPMC_NCS4, OMAP_MUX_MODE4 | OMAP_PIN_INPUT_PULLDOWN),*/
 	OMAP3_MUX(MCBSP1_DX, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),
 	OMAP3_MUX(MCBSP1_FSX, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),
+	OMAP3_MUX(GPMC_NCS5, OMAP_MUX_MODE3 | OMAP_PIN_OUTPUT),		/* This is for GPT10 pwm buzzer */
 	{ .reg_offset = OMAP_MUX_TERMINATOR },
 };
 #else
@@ -867,7 +891,7 @@ static struct omap_uart_port_info omap_uart[]= {
 static void __init am3517_evm_init(void)
 {
 	/* SPI FRAM init */ //STE
-	omap_mux_init_signal("mcspi1_clk", OMAP_MUX_MODE0 | OMAP_PIN_INPUT);//STE
+	omap_mux_init_signal("mcspi1_clk", OMAP_MUX_MODE0 | OMAP_PIN_OUTPUT);//STE
 	omap_mux_init_signal("mcspi1_somi", OMAP_MUX_MODE0 | OMAP_PIN_INPUT);//STE
 	omap_mux_init_signal("mcspi1_simo", OMAP_MUX_MODE0 | OMAP_PIN_OUTPUT);//STE
 	omap_mux_init_signal("mcspi1_cs0", OMAP_MUX_MODE0 | OMAP_PIN_OUTPUT);//STE
@@ -878,6 +902,11 @@ static void __init am3517_evm_init(void)
 
 	platform_add_devices(am3517_evm_devices,
 				ARRAY_SIZE(am3517_evm_devices));
+	
+	/* Leds and beeper */
+	platform_device_register(&leds_gpio);
+	platform_device_register(&pwm_device);
+	platform_device_register(&pwm_beeper);
 
 	spi_register_board_info(spidev_board_info, ARRAY_SIZE(spidev_board_info));//STE
 

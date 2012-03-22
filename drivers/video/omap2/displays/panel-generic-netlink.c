@@ -30,85 +30,107 @@
 #include <net/genetlink.h>
 
 /* generic netlink attributes */
- enum {
-       DISPLAY_CONFIG_A_UNSPEC,
-       DISPLAY_CONFIG_A_BRIGHTNESS_MIN,
-       DISPLAY_CONFIG_A_BRIGHTNESS_MAX,
-       DISPLAY_CONFIG_A_PWMFREQ,
-       DISPLAY_CONFIG_A_REZX,
-       DISPLAY_CONFIG_A_REZY,
-       DISPLAY_CONFIG_A_BPP,
-       DISPLAY_CONFIG_A_HS_FP,
-       DISPLAY_CONFIG_A_HS_BP,
-       DISPLAY_CONFIG_A_HS_W,
-       DISPLAY_CONFIG_A_HS_INV,
-       DISPLAY_CONFIG_A_VS_FP,
-       DISPLAY_CONFIG_A_VS_BP,
-       DISPLAY_CONFIG_A_VS_W,
-       DISPLAY_CONFIG_A_VS_INV,
-       DISPLAY_CONFIG_A_BLANK_INV,
-       DISPLAY_CONFIG_A_PCLK_FREQ,
-       DISPLAY_CONFIG_A_PCLK_INV,
-       DISPLAY_CONFIG_A_INVERTER_NAME,
-       __DISPLAY_CONFIG_A_MAX,
- };
-  #define DISPLAY_CONFIG_A_MAX (__DISPLAY_CONFIG_A_MAX - 1)
+enum {
+	DISPLAY_CONFIG_A_UNSPEC,
+	DISPLAY_CONFIG_A_BRIGHTNESS_MIN,
+	DISPLAY_CONFIG_A_BRIGHTNESS_MAX,
+	DISPLAY_CONFIG_A_PWMFREQ,
+	DISPLAY_CONFIG_A_REZX,
+	DISPLAY_CONFIG_A_REZY,
+	DISPLAY_CONFIG_A_BPP,
+	DISPLAY_CONFIG_A_HS_FP,
+	DISPLAY_CONFIG_A_HS_BP,
+	DISPLAY_CONFIG_A_HS_W,
+	DISPLAY_CONFIG_A_HS_INV,
+	DISPLAY_CONFIG_A_VS_FP,
+	DISPLAY_CONFIG_A_VS_BP,
+	DISPLAY_CONFIG_A_VS_W,
+	DISPLAY_CONFIG_A_VS_INV,
+	DISPLAY_CONFIG_A_BLANK_INV,
+	DISPLAY_CONFIG_A_PCLK_FREQ,
+	DISPLAY_CONFIG_A_PCLK_INV,
+	DISPLAY_CONFIG_A_INVERTER_NAME,
+    __DISPLAY_CONFIG_A_MAX,
+};
+#define DISPLAY_CONFIG_A_MAX (__DISPLAY_CONFIG_A_MAX - 1)
 
- /* generic netlink attribute policy */
- static struct nla_policy display_config_genl_policy[DISPLAY_CONFIG_A_MAX + 1] = {
-	   [DISPLAY_CONFIG_A_BRIGHTNESS_MIN] = { .type = NLA_U32 },
-       [DISPLAY_CONFIG_A_BRIGHTNESS_MAX] = { .type = NLA_U32 },
-       [DISPLAY_CONFIG_A_PWMFREQ] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_REZX] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_REZY] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_BPP] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_HS_FP] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_HS_BP] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_HS_W] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_HS_INV] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_VS_FP] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_VS_BP] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_VS_W] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_VS_INV] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_BLANK_INV] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_PCLK_FREQ] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_PCLK_INV] = { .type = NLA_U64 },
-       [DISPLAY_CONFIG_A_INVERTER_NAME] = { .type = NLA_NUL_STRING },
- };
-
- /* generic netlink family definition */
- static struct genl_family display_config_gnl_family = {
-       .id = GENL_ID_GENERATE,
-       .hdrsize = 0,
-       .name = "DISPLAY_CONFIG",
-       .version = 1,
-       .maxattr = DISPLAY_CONFIG_A_MAX,
- };
-
-/* Default configuration */
-static struct omap_video_timings generic_netlink_panel_timings = {
-	.x_res = 800,
-	.y_res = 480,
-
-	.pixel_clock	= 32000,
-
-	.hsw		= 40,
-	.hfp		= 48,
-	.hbp		= 40,
-
-	.vsw		= 16,
-	.vfp		= 10,
-	.vbp		= 26,
+/* generic netlink attribute policy */
+static struct nla_policy display_config_genl_policy[DISPLAY_CONFIG_A_MAX + 1] = {
+	[DISPLAY_CONFIG_A_BRIGHTNESS_MIN] = { .type = NLA_U32 },
+	[DISPLAY_CONFIG_A_BRIGHTNESS_MAX] = { .type = NLA_U32 },
+	[DISPLAY_CONFIG_A_PWMFREQ] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_REZX] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_REZY] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_BPP] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_HS_FP] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_HS_BP] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_HS_W] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_HS_INV] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_VS_FP] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_VS_BP] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_VS_W] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_VS_INV] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_BLANK_INV] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_PCLK_FREQ] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_PCLK_INV] = { .type = NLA_U64 },
+	[DISPLAY_CONFIG_A_INVERTER_NAME] = { .type = NLA_NUL_STRING },
 };
 
-//static long omap_dss_lcd_ivs; //STE
-//static long	omap_dss_lcd_ihs; //STE
-//static long	omap_dss_lcd_ipc; //STE
-//static long omap_dss_lcd_ieo; //STE
-//static long omap_dss_lcd_rf; //STE
-//static long omap_dss_lcd_onoff; //STE
+/* generic netlink family definition */
+static struct genl_family display_config_gnl_family = {
+	.id = GENL_ID_GENERATE,
+	.hdrsize = 0,
+	.name = "DISPLAY_CONFIG",
+	.version = 1,
+	.maxattr = DISPLAY_CONFIG_A_MAX,
+};
 
-static int sharp_lq_panel_power_on(struct omap_dss_device *dssdev)
+struct panel_config {
+	struct omap_video_timings timings;
+
+	int acbi;       /* ac-bias pin transitions per interrupt */
+	/* Unit: line clocks */
+	int acb;        /* ac-bias pin frequency */
+
+	enum omap_panel_config config;
+
+	int power_on_delay;
+	int power_off_delay;
+
+	/*
+	 * Used to match device to panel configuration
+	 * when use generic panel driver
+	 */
+	const char *name;
+};
+
+/* Default panel configuration */
+//TODO: use the most conservative configuration
+static struct panel_config generic_netlink_panel = {
+	{
+		.x_res = 800,
+		.y_res = 480,
+
+		.pixel_clock	= 32000,
+
+		.hsw		= 40,
+		.hfp		= 48,
+		.hbp		= 40,
+
+		.vsw		= 16,
+		.vfp		= 10,
+		.vbp		= 26,
+	},
+	.acbi                   = 0x0,
+	.acb                    = 0x0,
+	.config                 = OMAP_DSS_LCD_TFT | OMAP_DSS_LCD_IVS |
+								OMAP_DSS_LCD_IHS,
+	.power_on_delay         = 0,
+	.power_off_delay        = 0,
+	.name                   = "default",
+};
+
+static int generic_netlink_panel_power_on(struct omap_dss_device *dssdev)
 {
 	int r;
 
@@ -135,7 +157,7 @@ err0:
 	return r;
 }
 
-static void sharp_lq_panel_power_off(struct omap_dss_device *dssdev)
+static void generic_netlink_panel_power_off(struct omap_dss_device *dssdev)
 {
 	if (dssdev->state != OMAP_DSS_DISPLAY_ACTIVE)
 		return;
@@ -151,10 +173,10 @@ static void sharp_lq_panel_power_off(struct omap_dss_device *dssdev)
 
 static int generic_netlink_panel_probe(struct omap_dss_device *dssdev)
 {
-    dssdev->panel.config = OMAP_DSS_LCD_TFT | OMAP_DSS_LCD_IVS |
-				OMAP_DSS_LCD_IHS;
-	dssdev->panel.acb = 0x0;
-	dssdev->panel.timings = generic_netlink_panel_timings;
+    dssdev->panel.timings = generic_netlink_panel.timings;
+	dssdev->panel.acb = generic_netlink_panel.acb;
+	dssdev->panel.acbi = generic_netlink_panel.acbi;
+	dssdev->panel.config = generic_netlink_panel.config;
 
 	return 0;
 }
@@ -167,7 +189,7 @@ static int generic_netlink_panel_enable(struct omap_dss_device *dssdev)
 {
 	int r = 0;
 
-	r = sharp_lq_panel_power_on(dssdev);
+	r = generic_netlink_panel_power_on(dssdev);
 	if (r)
 		return r;
 
@@ -178,14 +200,14 @@ static int generic_netlink_panel_enable(struct omap_dss_device *dssdev)
 
 static void generic_netlink_panel_disable(struct omap_dss_device *dssdev)
 {
-	sharp_lq_panel_power_off(dssdev);
+	generic_netlink_panel_power_off(dssdev);
 
 	dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
 }
 
 static int generic_netlink_panel_suspend(struct omap_dss_device *dssdev)
 {
-	sharp_lq_panel_power_off(dssdev);
+	generic_netlink_panel_power_off(dssdev);
 	dssdev->state = OMAP_DSS_DISPLAY_SUSPENDED;
 	return 0;
 }
@@ -194,7 +216,7 @@ static int generic_netlink_panel_resume(struct omap_dss_device *dssdev)
 {
 	int r = 0;
 
-	r = sharp_lq_panel_power_on(dssdev);
+	r = generic_netlink_panel_power_on(dssdev);
 	if (r)
 		return r;
 
@@ -250,43 +272,49 @@ static struct omap_dss_driver generic_netlink_panel_driver = {
 			return -1;
 		}
 
-		printk(KERN_INFO "Received generic netlink message brightness_min: %d\n", nla_get_u32(info->attrs[DISPLAY_CONFIG_A_BRIGHTNESS_MIN]));
-		printk(KERN_INFO "Received generic netlink message brightness_max: %d\n", nla_get_u32(info->attrs[DISPLAY_CONFIG_A_BRIGHTNESS_MAX]));
-		printk(KERN_INFO "Received generic netlink message pwmfreq: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PWMFREQ]));
-		printk(KERN_INFO "Received generic netlink message rezx: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZX]));
-		printk(KERN_INFO "Received generic netlink message rezy: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZY]));
-		printk(KERN_INFO "Received generic netlink message bpp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BPP]));
-		printk(KERN_INFO "Received generic netlink message hs_fp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_FP]));
-		printk(KERN_INFO "Received generic netlink message hs_bp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_BP]));
-		printk(KERN_INFO "Received generic netlink message hs_w: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_W]));
-		printk(KERN_INFO "Received generic netlink message hs_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_INV])); //IHS
-		printk(KERN_INFO "Received generic netlink message vs_fp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_FP]));
-		printk(KERN_INFO "Received generic netlink message vs_bp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_BP]));
-		printk(KERN_INFO "Received generic netlink message vs_w: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_W]));
-		printk(KERN_INFO "Received generic netlink message vs_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_INV])); //IVS
-		printk(KERN_INFO "Received generic netlink message blank_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV])); //IEO
-		printk(KERN_INFO "Received generic netlink message pclk_freq: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_FREQ]));
-		printk(KERN_INFO "Received generic netlink message pclk_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_INV])); //IPC
-		printk(KERN_INFO "Received generic netlink message inverter_name: %s\n", (char *)nla_data(info->attrs[DISPLAY_CONFIG_A_INVERTER_NAME]));
+		printk(KERN_DEBUG "Received generic netlink message brightness_min: %d\n", nla_get_u32(info->attrs[DISPLAY_CONFIG_A_BRIGHTNESS_MIN]));
+		printk(KERN_DEBUG "Received generic netlink message brightness_max: %d\n", nla_get_u32(info->attrs[DISPLAY_CONFIG_A_BRIGHTNESS_MAX]));
+		printk(KERN_DEBUG "Received generic netlink message pwmfreq: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PWMFREQ]));
+		printk(KERN_DEBUG "Received generic netlink message rezx: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZX]));
+		printk(KERN_DEBUG "Received generic netlink message rezy: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZY]));
+		printk(KERN_DEBUG "Received generic netlink message bpp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BPP]));
+		printk(KERN_DEBUG "Received generic netlink message hs_fp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_FP]));
+		printk(KERN_DEBUG "Received generic netlink message hs_bp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_BP]));
+		printk(KERN_DEBUG "Received generic netlink message hs_w: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_W]));
+		printk(KERN_DEBUG "Received generic netlink message hs_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_INV])); //IHS
+		printk(KERN_DEBUG "Received generic netlink message vs_fp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_FP]));
+		printk(KERN_DEBUG "Received generic netlink message vs_bp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_BP]));
+		printk(KERN_DEBUG "Received generic netlink message vs_w: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_W]));
+		printk(KERN_DEBUG "Received generic netlink message vs_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_INV])); //IVS
+		printk(KERN_DEBUG "Received generic netlink message blank_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV])); //IEO
+		printk(KERN_DEBUG "Received generic netlink message pclk_freq: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_FREQ]));
+		printk(KERN_DEBUG "Received generic netlink message pclk_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_INV])); //IPC
+		printk(KERN_DEBUG "Received generic netlink message inverter_name: %s\n", (char *)nla_data(info->attrs[DISPLAY_CONFIG_A_INVERTER_NAME]));
 
 
 		//ONOFF sempre a 1
-		generic_netlink_panel_timings.x_res = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZX]);
-		generic_netlink_panel_timings.y_res = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZY]);
+		generic_netlink_panel.timings.x_res = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZX]);
+		generic_netlink_panel.timings.y_res = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZY]);
 
-		generic_netlink_panel_timings.pixel_clock = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_FREQ])*1000;
+		generic_netlink_panel.timings.pixel_clock = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_FREQ])*1000;
 
-		generic_netlink_panel_timings.hsw = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_W]);
-		generic_netlink_panel_timings.hfp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_FP]);
-		generic_netlink_panel_timings.hbp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_BP]);
+		generic_netlink_panel.timings.hsw = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_W]);
+		generic_netlink_panel.timings.hfp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_FP]);
+		generic_netlink_panel.timings.hbp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_BP]);
 
-		generic_netlink_panel_timings.vsw = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_W]);
-		generic_netlink_panel_timings.vfp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_FP]);
-		generic_netlink_panel_timings.vbp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_BP]);
+		generic_netlink_panel.timings.vsw = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_W]);
+		generic_netlink_panel.timings.vfp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_FP]);
+		generic_netlink_panel.timings.vbp = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_BP]);
 
-//		omap_dss_lcd_ivs = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_INV]); //STE
-//		omap_dss_lcd_ihs = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV]); //STE
-//		omap_dss_lcd_ipc = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_INV]); //STE
+		generic_netlink_panel.config = OMAP_DSS_LCD_TFT;
+		if ((long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_INV]))
+			generic_netlink_panel.config |= OMAP_DSS_LCD_IVS;
+		if ((long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV]))
+			generic_netlink_panel.config |= OMAP_DSS_LCD_IHS;
+		if ((long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_INV]))
+			generic_netlink_panel.config |= OMAP_DSS_LCD_IPC;
+
+		generic_netlink_panel.name = (char *)nla_data(info->attrs[DISPLAY_CONFIG_A_INVERTER_NAME]);
 
 		return omap_dss_register_driver(&generic_netlink_panel_driver);
  }
@@ -306,24 +334,6 @@ static struct omap_dss_driver generic_netlink_panel_driver = {
        .dumpit = NULL,
  };
 //End STE
-
-//STE
-#define NETLINK_NITRO 17
-static struct sock *nl_sk = NULL;
-
-static void nl_data_ready (struct sk_buff *skb)
-{
-
-	struct nlmsghdr *nlh = NULL;
-	if(skb == NULL) {
-		printk("skb is NULL \n");
-		return ;
-	}
-	nlh = (struct nlmsghdr *)skb->data;
-	printk(KERN_INFO "%s: received netlink message payload: %s\n", __FUNCTION__, NLMSG_DATA(nlh));
-
-}
-//STE end
 
 static int __init generic_netlink_panel_drv_init(void)
 {
