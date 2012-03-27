@@ -567,7 +567,7 @@ static int __init am3517_evm_i2c_init(void)
 
 //STE
 static struct omap2_mcspi_device_config am35x_mcspi_config = {
-	.turbo_mode	= 0,
+	.turbo_mode	= 1,
 	.single_channel	= 1,	/* 0: slave, 1: master */
 };
 
@@ -583,7 +583,7 @@ static struct spi_board_info spidev_board_info[] = {
         .modalias    = "at25",
         .controller_data	= &am35x_mcspi_config,
 		.platform_data	= &fm25v05,
-        .max_speed_hz    = 12000000, //10 Mbps
+        .max_speed_hz    = 24000000, //10 Mbps
         .bus_num    = 1,
         .chip_select    = 0,
         .mode = SPI_MODE_0,
@@ -798,6 +798,11 @@ static struct omap_board_mux board_mux[] __initdata = {
 	OMAP3_MUX(MCBSP1_DX, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),
 	OMAP3_MUX(MCBSP1_FSX, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),
 	OMAP3_MUX(GPMC_NCS5, OMAP_MUX_MODE3 | OMAP_PIN_OUTPUT),		/* This is for GPT10 pwm buzzer */
+	OMAP3_MUX(MCSPI1_CLK, OMAP_MUX_MODE0 | OMAP_PIN_INPUT),
+	OMAP3_MUX(MCSPI1_SOMI, OMAP_MUX_MODE0 | OMAP_PIN_INPUT),
+	OMAP3_MUX(MCSPI1_SIMO, OMAP_MUX_MODE0 | OMAP_PIN_OUTPUT),
+	OMAP3_MUX(MCSPI1_CS0, OMAP_MUX_MODE0 | OMAP_PIN_OUTPUT),
+	OMAP3_MUX(MCSPI1_CS1, OMAP_MUX_MODE0 |OMAP_PIN_OUTPUT),
 	{ .reg_offset = OMAP_MUX_TERMINATOR },
 };
 #else
@@ -890,13 +895,6 @@ static struct omap_uart_port_info omap_uart[]= {
 
 static void __init am3517_evm_init(void)
 {
-	/* SPI FRAM init */ //STE
-	omap_mux_init_signal("mcspi1_clk", OMAP_MUX_MODE0 | OMAP_PIN_OUTPUT);//STE
-	omap_mux_init_signal("mcspi1_somi", OMAP_MUX_MODE0 | OMAP_PIN_INPUT);//STE
-	omap_mux_init_signal("mcspi1_simo", OMAP_MUX_MODE0 | OMAP_PIN_OUTPUT);//STE
-	omap_mux_init_signal("mcspi1_cs0", OMAP_MUX_MODE0 | OMAP_PIN_OUTPUT);//STE
-	omap_mux_init_signal("mcspi1_cs1", OMAP_MUX_MODE0 |OMAP_PIN_OUTPUT);//STE
-
 	omap3_mux_init(board_mux, OMAP_PACKAGE_CBB);
 	am3517_evm_i2c_init();
 
