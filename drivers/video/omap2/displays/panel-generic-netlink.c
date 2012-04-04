@@ -24,17 +24,12 @@
 
 #include <plat/display.h>
 
-#include <linux/netlink.h>
-#include <net/sock.h>
 #include <net/netlink.h>
 #include <net/genetlink.h>
 
 /* generic netlink attributes */
 enum {
 	DISPLAY_CONFIG_A_UNSPEC,
-	DISPLAY_CONFIG_A_BRIGHTNESS_MIN,
-	DISPLAY_CONFIG_A_BRIGHTNESS_MAX,
-	DISPLAY_CONFIG_A_PWMFREQ,
 	DISPLAY_CONFIG_A_REZX,
 	DISPLAY_CONFIG_A_REZY,
 	DISPLAY_CONFIG_A_BPP,
@@ -49,16 +44,12 @@ enum {
 	DISPLAY_CONFIG_A_BLANK_INV,
 	DISPLAY_CONFIG_A_PCLK_FREQ,
 	DISPLAY_CONFIG_A_PCLK_INV,
-	DISPLAY_CONFIG_A_INVERTER_NAME,
     __DISPLAY_CONFIG_A_MAX,
 };
 #define DISPLAY_CONFIG_A_MAX (__DISPLAY_CONFIG_A_MAX - 1)
 
 /* generic netlink attribute policy */
 static struct nla_policy display_config_genl_policy[DISPLAY_CONFIG_A_MAX + 1] = {
-	[DISPLAY_CONFIG_A_BRIGHTNESS_MIN] = { .type = NLA_U32 },
-	[DISPLAY_CONFIG_A_BRIGHTNESS_MAX] = { .type = NLA_U32 },
-	[DISPLAY_CONFIG_A_PWMFREQ] = { .type = NLA_U64 },
 	[DISPLAY_CONFIG_A_REZX] = { .type = NLA_U64 },
 	[DISPLAY_CONFIG_A_REZY] = { .type = NLA_U64 },
 	[DISPLAY_CONFIG_A_BPP] = { .type = NLA_U64 },
@@ -73,7 +64,6 @@ static struct nla_policy display_config_genl_policy[DISPLAY_CONFIG_A_MAX + 1] = 
 	[DISPLAY_CONFIG_A_BLANK_INV] = { .type = NLA_U64 },
 	[DISPLAY_CONFIG_A_PCLK_FREQ] = { .type = NLA_U64 },
 	[DISPLAY_CONFIG_A_PCLK_INV] = { .type = NLA_U64 },
-	[DISPLAY_CONFIG_A_INVERTER_NAME] = { .type = NLA_NUL_STRING },
 };
 
 /* generic netlink family definition */
@@ -142,7 +132,7 @@ static int generic_netlink_panel_power_on(struct omap_dss_device *dssdev)
 		goto err0;
 
 	/* wait couple of vsyncs until enabling the LCD */
-//	msleep(50); //STE Avoid delay for those displays that need a different enable sequence
+//	msleep(50); //Avoid delay for those displays that need a different enable sequence
 
 	if (dssdev->platform_enable) {
 		r = dssdev->platform_enable(dssdev);
@@ -272,9 +262,6 @@ static struct omap_dss_driver generic_netlink_panel_driver = {
 			return -1;
 		}
 
-		printk(KERN_DEBUG "Received generic netlink message brightness_min: %d\n", nla_get_u32(info->attrs[DISPLAY_CONFIG_A_BRIGHTNESS_MIN]));
-		printk(KERN_DEBUG "Received generic netlink message brightness_max: %d\n", nla_get_u32(info->attrs[DISPLAY_CONFIG_A_BRIGHTNESS_MAX]));
-		printk(KERN_DEBUG "Received generic netlink message pwmfreq: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PWMFREQ]));
 		printk(KERN_DEBUG "Received generic netlink message rezx: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZX]));
 		printk(KERN_DEBUG "Received generic netlink message rezy: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZY]));
 		printk(KERN_DEBUG "Received generic netlink message bpp: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BPP]));
@@ -289,10 +276,8 @@ static struct omap_dss_driver generic_netlink_panel_driver = {
 		printk(KERN_DEBUG "Received generic netlink message blank_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV])); //IEO
 		printk(KERN_DEBUG "Received generic netlink message pclk_freq: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_FREQ]));
 		printk(KERN_DEBUG "Received generic netlink message pclk_inv: %ld\n", (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_INV])); //IPC
-		printk(KERN_DEBUG "Received generic netlink message inverter_name: %s\n", (char *)nla_data(info->attrs[DISPLAY_CONFIG_A_INVERTER_NAME]));
 
-
-		//ONOFF sempre a 1
+		//Pixel Clock control ONOFF always 1
 		generic_netlink_panel.timings.x_res = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZX]);
 		generic_netlink_panel.timings.y_res = (long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_REZY]);
 
@@ -309,41 +294,40 @@ static struct omap_dss_driver generic_netlink_panel_driver = {
 		generic_netlink_panel.config = OMAP_DSS_LCD_TFT;
 		if ((long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_VS_INV]))
 			generic_netlink_panel.config |= OMAP_DSS_LCD_IVS;
-		if ((long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV]))
+		if ((long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_HS_INV]))
 			generic_netlink_panel.config |= OMAP_DSS_LCD_IHS;
+		if ((long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_BLANK_INV]))
+			generic_netlink_panel.config |= OMAP_DSS_LCD_IEO;
 		if ((long)nla_get_u64(info->attrs[DISPLAY_CONFIG_A_PCLK_INV]))
 			generic_netlink_panel.config |= OMAP_DSS_LCD_IPC;
 
-		generic_netlink_panel.name = (char *)nla_data(info->attrs[DISPLAY_CONFIG_A_INVERTER_NAME]);
+		generic_netlink_panel.name = "userspace";
 
 		return omap_dss_register_driver(&generic_netlink_panel_driver);
  }
+
  /* commands */
  enum {
-	   DISPLAY_CONFIG_C_UNSPEC,
-	   DISPLAY_CONFIG_C_SET,
-       __DISPLAY_CONFIG_C_MAX,
+	 DISPLAY_CONFIG_C_UNSPEC,
+	 DISPLAY_CONFIG_C_SET,
+	 __DISPLAY_CONFIG_C_MAX,
  };
  #define DISPLAY_CONFIG_C_MAX (__DISPLAY_CONFIG_C_MAX - 1)
+
  /* operation definition */
  static struct genl_ops display_config_gnl_ops_set = {
-       .cmd = DISPLAY_CONFIG_C_SET,
-       .flags = 0,
-       .policy = display_config_genl_policy,
-       .doit = display_config,
-       .dumpit = NULL,
+	.cmd = DISPLAY_CONFIG_C_SET,
+	.flags = 0,
+	.policy = display_config_genl_policy,
+	.doit = display_config,
+	.dumpit = NULL,
  };
-//End STE
 
 static int __init generic_netlink_panel_drv_init(void)
 {
 	int rf;
 	int ro;
 
-#ifndef CONFIG_FB_OMAP2_MODULE
-	printk(KERN_INFO "Built-in driver: not initializing generic netlink socket");
-	return omap_dss_register_driver(&generic_netlink_panel_driver);
-#else
 	printk(KERN_INFO "Initializing generic netlink socket");
 
 	rf = genl_register_family(&display_config_gnl_family);
@@ -353,14 +337,12 @@ static int __init generic_netlink_panel_drv_init(void)
 	// use default values when the initialization of the generic netlink fails
 	if (rf != 0 || ro != 0)
 		return omap_dss_register_driver(&generic_netlink_panel_driver);
-#endif
 	//TODO: check if it is a correct return value
 	return 0;
 }
 
 static void __exit generic_netlink_panel_drv_exit(void)
 {
-	printk(KERN_INFO "Goodbye");//STE
 	omap_dss_unregister_driver(&generic_netlink_panel_driver);
 }
 

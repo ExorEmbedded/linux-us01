@@ -62,6 +62,8 @@
 
 #include <linux/leds.h>
 
+#include <linux/pwm_backlight.h>
+
 #include "mux.h"
 #include "control.h"
 #include "hsmmc.h"
@@ -74,6 +76,15 @@
 //#define GPMC_CS0_BASE  0x60 //STE
 //#define GPMC_CS_SIZE   0x30 //STE
 
+#define ETOP504_VAL 103
+#define ETOP507_VAL 104
+
+#define DEFAULT_TCH_VAL 0
+#define AMTUSB_TCH_VAL 1
+
+static int hw_id = ETOP504_VAL;
+static int touch_id = DEFAULT_TCH_VAL;
+
 static struct omap2_pwm_platform_config pwm_config = {
     .timer_id           = 10,   // GPT10_PWM_EVT
     .polarity           = 1     // Active-high
@@ -84,6 +95,19 @@ static struct platform_device pwm_device = {
     .id                 = 0,
     .dev                = {
         .platform_data  = &pwm_config
+    }
+};
+
+static struct omap2_pwm_platform_config bl_pwm_config = {
+    .timer_id           = 9,   // gpt9_pwm_evt
+    .polarity           = 1     // Active-high
+};
+
+static struct platform_device bl_pwm_device = {
+    .name               = "omap-pwm",
+    .id                 = 1,
+    .dev                = {
+        .platform_data  = &bl_pwm_config
     }
 };
 
@@ -310,10 +334,8 @@ static void __init am3517_evm_display_init(void)
 		defined(CONFIG_PANEL_GENERIC_NETLINK_MODULE)
 	int r;
 
-	//omap_mux_init_gpio(LCD_PANEL_PWR, OMAP_PIN_INPUT_PULLUP);
 	omap_mux_init_gpio(LCD_PANEL_PWR, OMAP_PIN_INPUT_PULLDOWN);//STE
 	omap_mux_init_gpio(LCD_PANEL_BKLIGHT_PWR, OMAP_PIN_INPUT_PULLDOWN);
-	omap_mux_init_gpio(LCD_PANEL_PWM, OMAP_PIN_INPUT_PULLDOWN);
 	/*
 	 * Enable GPIO 182 = LCD Backlight Power
 	 */
@@ -323,15 +345,6 @@ static void __init am3517_evm_display_init(void)
 		return;
 	}
 	gpio_direction_output(LCD_PANEL_BKLIGHT_PWR, 1);
-	/*
-	 * Enable GPIO 181 = LCD Panel PWM
-	 */
-	r = gpio_request(LCD_PANEL_PWM, "lcd_pwm");
-	if (r) {
-		printk(KERN_ERR "failed to get lcd_pwm\n");
-		goto err_1;
-	}
-	gpio_direction_output(LCD_PANEL_PWM, 1);
 	/*
 	 * Enable GPIO 176 = LCD Panel Power enable pin
 	 */
@@ -403,6 +416,42 @@ static struct platform_device am3517_evm_dss_device = {
 	.id		= -1,
 	.dev		= {
 		.platform_data	= &am3517_evm_dss_data,
+	},
+};
+
+//BACKLIGHT
+
+static int bl_init(struct device *dev)
+{
+//		int r;
+//		omap_mux_init_gpio(LCD_PANEL_PWM, OMAP_PIN_INPUT_PULLDOWN);
+		/*
+		 * Enable GPIO 181 = LCD Panel PWM
+		 */
+//		r = gpio_request(LCD_PANEL_PWM, "lcd_pwm");
+//		if (r) {
+//			printk(KERN_ERR "failed to get lcd_pwm\n");
+//			gpio_free(LCD_PANEL_BKLIGHT_PWR);
+//		}
+//		gpio_direction_output(LCD_PANEL_PWM, 1);
+    return 0;
+}
+
+static struct platform_pwm_backlight_data backlight_data = {
+	.pwm_id		= 1,
+//	.max_brightness	= 255,
+	.dft_brightness	= 255,
+//	.lth_brightness = 63,
+//	.pwm_period_ns	= 100000, //1000000000 / (1000 * 20),
+//	.init		= bl_init,
+	//.notify		= bl_init,
+};
+
+static struct platform_device backlight_device = {
+	.name		= "pwm-backlight-netlink",
+	.dev		= {
+//		.parent	= &s3c_device_timer[1].dev,
+		.platform_data = &backlight_data,
 	},
 };
 
@@ -797,6 +846,7 @@ static struct omap_board_mux board_mux[] __initdata = {
 	OMAP3_MUX(GPMC_NCS4, OMAP_MUX_MODE4 | OMAP_PIN_INPUT_PULLDOWN),*/
 	OMAP3_MUX(MCBSP1_DX, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),
 	OMAP3_MUX(MCBSP1_FSX, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),
+	OMAP3_MUX(GPMC_NCS4, OMAP_MUX_MODE3 | OMAP_PIN_OUTPUT),
 	OMAP3_MUX(GPMC_NCS5, OMAP_MUX_MODE3 | OMAP_PIN_OUTPUT),		/* This is for GPT10 pwm buzzer */
 	OMAP3_MUX(MCSPI1_CLK, OMAP_MUX_MODE0 | OMAP_PIN_INPUT),
 	OMAP3_MUX(MCSPI1_SOMI, OMAP_MUX_MODE0 | OMAP_PIN_INPUT),
@@ -874,7 +924,7 @@ static struct omap2_hsmmc_info mmc[] = {
 	{}      /* Terminator */
 };
 
-static struct omap_uart_port_info omap_uart[]= {
+static struct omap_uart_port_info etop507_omap_uart[]= {
 	{
 		.gpio_dxen = -EINVAL,
 		.gpio_rxen = -EINVAL,
@@ -886,9 +936,28 @@ static struct omap_uart_port_info omap_uart[]= {
 		.gpio_mode = -EINVAL,
 	},
 	{
-		.gpio_dxen = 184, //149,
-		.gpio_rxen = 170, //148,
-		.gpio_mode = 185, //63,
+		.gpio_dxen = 184,
+		.gpio_rxen = 170,
+		.gpio_mode = 185,
+	},
+	{}	   /* Terminator */
+};
+
+static struct omap_uart_port_info etop504_omap_uart[]= {
+	{
+		.gpio_dxen = -EINVAL,
+		.gpio_rxen = -EINVAL,
+		.gpio_mode = -EINVAL,
+	},
+	{
+		.gpio_dxen = -EINVAL,
+		.gpio_rxen = -EINVAL,
+		.gpio_mode = -EINVAL,
+	},
+	{
+		.gpio_dxen = 149,
+		.gpio_rxen = 148,
+		.gpio_mode = 63,
 	},
 	{}	   /* Terminator */
 };
@@ -900,8 +969,8 @@ static void __init am3517_evm_init(void)
 
 	platform_add_devices(am3517_evm_devices,
 				ARRAY_SIZE(am3517_evm_devices));
-	
-	/* Leds and beeper */
+
+	/* LEDS and beeper */
 	platform_device_register(&leds_gpio);
 	platform_device_register(&pwm_device);
 	platform_device_register(&pwm_beeper);
@@ -909,7 +978,16 @@ static void __init am3517_evm_init(void)
 	spi_register_board_info(spidev_board_info, ARRAY_SIZE(spidev_board_info));//STE
 
 	//omap_serial_init();//STE
-	omap_serial_board_init(omap_uart);
+	if(hw_id == ETOP507_VAL)
+	{
+		printk(KERN_DEBUG "Initing omap serial 507\n");
+		omap_serial_board_init(etop507_omap_uart);
+	}
+	else
+	{
+		printk(KERN_DEBUG "Initing omap serial 504\n");
+		omap_serial_board_init(etop504_omap_uart);
+	}
 
 	/* Configure GPIO for EHCI port */
 	omap_mux_init_gpio(57, OMAP_PIN_OUTPUT);
@@ -940,9 +1018,12 @@ static void __init am3517_evm_init(void)
 	/* DSS */
 	am3517_evm_display_init();
 
+	platform_device_register(&bl_pwm_device);
+	platform_device_register(&backlight_device);
+
 	/*Ethernet*/
-	am3517_evm_ethernet_init(&am3517_evm_emac_pdata); 
-	am3517_evm_hecc_init(&am3517_evm_hecc_pdata);	
+	am3517_evm_ethernet_init(&am3517_evm_emac_pdata);
+	am3517_evm_hecc_init(&am3517_evm_hecc_pdata);
 
 	/* MUSB */
 	am3517_evm_musb_init();
@@ -951,8 +1032,40 @@ static void __init am3517_evm_init(void)
 	omap2_hsmmc_init(mmc);
 
 	/* NOR Flash on Application board */
-	am3517_nor_init(); 
+	am3517_nor_init();
 }
+
+static int __init am3517_evm_early_param(char *cmdline)
+{
+	char *options;
+
+	printk(KERN_DEBUG "Un31 board_version value: %s\n", cmdline);
+
+	options = strchr(cmdline, ',');
+	if(!options) {
+		printk(KERN_ERR "Un31 board_version malformed parameter: %s\n", cmdline);
+		hw_id = ETOP504_VAL;
+		touch_id = DEFAULT_TCH_VAL;
+		return 0;
+	}
+
+	hw_id = simple_strtoul(cmdline, &options, 0);
+	touch_id = simple_strtoul(options + 1, &cmdline, 0);
+
+	if((hw_id != ETOP504_VAL && hw_id != ETOP507_VAL)
+			|| (touch_id != DEFAULT_TCH_VAL && touch_id != AMTUSB_TCH_VAL)) {
+		printk(KERN_ERR "Un31 board_version malformed parameter: %s\n", cmdline);
+		hw_id = ETOP504_VAL;
+		touch_id = DEFAULT_TCH_VAL;
+	}
+
+	printk(KERN_DEBUG "Un31 board_version hw_id: %d\n", hw_id);
+	printk(KERN_DEBUG "Un31 board version touch_id: %d\n", touch_id);
+
+	return 0;
+}
+
+early_param("board_version", am3517_evm_early_param);
 
 MACHINE_START(OMAP3517UN31, "OMAP3517/AM3517 UN31")
 	.boot_params	= 0x80000100,

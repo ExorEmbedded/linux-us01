@@ -36,6 +36,18 @@
 
 #include "omapfb.h"
 
+#include <net/netlink.h>
+#include <net/genetlink.h>
+
+/* generic netlink family definition */
+static struct genl_family omapfb_config_gnl_family = {
+	.id = GENL_ID_GENERATE,
+	.hdrsize = 0,
+	.name = "OMAPFB_CONFIG",
+	.version = 1,
+	.maxattr = 0,
+};
+
 #define MODULE_NAME     "omapfb"
 
 #define OMAPFB_PLANE_XRES_MIN		8
@@ -2367,14 +2379,54 @@ static struct platform_driver omapfb_driver = {
 	},
 };
 
+/* handler */
+ static int omapfb_config(struct sk_buff *skb, struct genl_info *info)
+ {
+       /* message handling code goes here; return 0 on success, negative
+        * values on failure */
+		if(skb == NULL) {
+			printk(KERN_ERR "skb is NULL \n");
+			return -1;
+		}
+
+		printk(KERN_DEBUG "Omapfb Received generic netlink sync message\n");
+
+		if (platform_driver_register(&omapfb_driver)) {
+			printk(KERN_ERR "failed to register omapfb driver\n");
+			return -ENODEV;
+		}
+
+		return 0;
+ }
+
+ /* commands */
+ enum {
+	 OMAPFB_CONFIG_C_UNSPEC,
+	 OMAPFB_CONFIG_C_SYNC,
+	 __OMAPFB_CONFIG_C_MAX,
+ };
+ #define OMAPFB_CONFIG_C_MAX (__OMAPFB_CONFIG_C_MAX - 1)
+
+ /* operation definition */
+ static struct genl_ops omapfb_config_gnl_ops_set = {
+	.cmd = OMAPFB_CONFIG_C_SYNC,
+	.flags = 0,
+	.doit = omapfb_config,
+	.dumpit = NULL,
+ };
+
 static int __init omapfb_init(void)
 {
 	DBG("omapfb_init\n");
 
-	if (platform_driver_register(&omapfb_driver)) {
-		printk(KERN_ERR "failed to register omapfb driver\n");
-		return -ENODEV;
-	}
+	int rf;
+	int ro;
+
+	printk(KERN_INFO "Omapfb Initializing generic netlink socket");
+
+	rf = genl_register_family(&omapfb_config_gnl_family);
+	if (rf == 0)
+		ro = genl_register_ops(&omapfb_config_gnl_family, &omapfb_config_gnl_ops_set);
 
 	return 0;
 }
@@ -2395,6 +2447,7 @@ module_param_named(mirror, def_mirror, bool, 0);
  * I guess better option would be a more dynamic approach,
  * so that omapfb reacts to new panels when they are loaded */
 late_initcall(omapfb_init);
+
 /*module_init(omapfb_init);*/
 module_exit(omapfb_exit);
 
