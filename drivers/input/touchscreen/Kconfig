@@ -691,5 +691,12 @@ config TOUCHSCREEN_STMPE
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called stmpe-ts.
+	  
+config USB_PENMOUNT
+	tristate "PenMount USB TouchScreen support"
+	depends on USB_ARCH_HAS_HCD
+	select USB
+	---help---
+	Support for PenMount USB touch screen.
 
 endif

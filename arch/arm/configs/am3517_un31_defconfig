@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux/arm 2.6.37 Kernel Configuration
-# Tue Apr  3 14:21:33 2012
+# Fri Apr 13 17:57:03 2012
 #
 CONFIG_ARM=y
 CONFIG_HAVE_PWM=y
@@ -994,6 +994,7 @@ CONFIG_INPUT_TOUCHSCREEN=y
 CONFIG_TOUCHSCREEN_TSC2004=y
 # CONFIG_TOUCHSCREEN_W90X900 is not set
 # CONFIG_TOUCHSCREEN_TPS6507X is not set
+CONFIG_USB_PENMOUNT=y
 CONFIG_INPUT_MISC=y
 # CONFIG_INPUT_AD714X is not set
 # CONFIG_INPUT_ATI_REMOTE is not set
