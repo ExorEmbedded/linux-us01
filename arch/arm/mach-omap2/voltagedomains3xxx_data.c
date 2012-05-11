@@ -31,6 +31,14 @@
  * VDD data
  */
 
+/* OMAP3-common voltagedomain data */
+
+static struct voltagedomain omap3_voltdm_wkup = {
+	.name = "wakeup",
+};
+
+/* 34xx/36xx voltagedomain data */
+
 static const struct omap_vfsm_instance omap3_vdd1_vfsm = {
 	.voltsetup_reg = OMAP3_PRM_VOLTSETUP1_OFFSET,
 	.voltsetup_mask = OMAP3430_SETUP_TIME1_MASK,
@@ -61,10 +69,6 @@ static struct voltagedomain omap3_voltdm_core = {
 	.vc = &omap3_vc_core,
 	.vfsm = &omap3_vdd2_vfsm,
 	.vp = &omap3_vp_core,
-};
-
-static struct voltagedomain omap3_voltdm_wkup = {
-	.name = "wakeup",
 };
 
 static struct voltagedomain *voltagedomains_omap3[] __initdata = {

@@ -732,9 +732,9 @@ b_host:
 		case OTG_STATE_A_SUSPEND:
 			usb_hcd_resume_root_hub(musb_to_hcd(musb));
 			musb_root_disconnect(musb);
-			if (musb->a_wait_bcon != 0 && is_otg_enabled(musb))
-				musb_platform_try_idle(musb, jiffies
-					+ msecs_to_jiffies(musb->a_wait_bcon));
+//			if (musb->a_wait_bcon != 0 && is_otg_enabled(musb))//STE
+//				musb_platform_try_idle(musb, jiffies//STE
+//					+ msecs_to_jiffies(musb->a_wait_bcon));//STE
 			break;
 		case OTG_STATE_B_HOST:
 			/* REVISIT this behaves for "real disconnect"

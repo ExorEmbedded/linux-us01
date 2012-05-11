@@ -46,6 +46,14 @@ config PANEL_PICODLP
 		A mini-projector used in TI's SDP4430 and EVM boards
 		For more info please visit http://www.dlp.com/projector/
 
+config PANEL_GENERIC_NETLINK
+        tristate "Generic LCD Panel with netlink support"
+        depends on OMAP2_DSS
+        help
+          LCD Panel used in Sitek's boards. Display parameters 
+          can be set using netlink socket, but only when FB_OMAP2 
+          is compiled as module. 
+
 config PANEL_TAAL
         tristate "Taal DSI Panel"
         depends on OMAP2_DSS_DSI

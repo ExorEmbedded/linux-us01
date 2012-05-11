@@ -675,8 +675,9 @@ static int __init omap_serial_early_init(void)
 core_initcall(omap_serial_early_init);
 
 /**
- * omap_serial_init_port() - initialize single serial port
+ * omap_serial_board_init_port() - initialize single serial port
  * @bdata: port specific board data pointer
+ * @info: platform specific data pointer
  *
  * This function initialies serial driver for given port only.
  * Platforms can call this function instead of omap_serial_init()
@@ -685,7 +686,7 @@ core_initcall(omap_serial_early_init);
  * Don't mix calls to omap_serial_init_port() and omap_serial_init(),
  * use only one of the two.
  */
-void __init omap_serial_init_port(struct omap_board_data *bdata)
+void __init omap_serial_board_init_port(struct omap_board_data *bdata, struct omap_uart_port_info *info)
 {
 	struct omap_uart_state *uart;
 	struct omap_hwmod *oh;
@@ -770,6 +771,17 @@ void __init omap_serial_init_port(struct omap_board_data *bdata)
 	omap_up.irqflags = IRQF_SHARED;
 	omap_up.flags = UPF_BOOT_AUTOCONF | UPF_SHARE_IRQ;
 
+	if (!info) {
+		omap_up.gpio_dxen = -EINVAL;
+		omap_up.gpio_rxen = -EINVAL;
+		omap_up.gpio_mode = -EINVAL;
+
+	} else 	{
+		omap_up.gpio_dxen = info->gpio_dxen;
+		omap_up.gpio_rxen = info->gpio_rxen;
+		omap_up.gpio_mode = info->gpio_mode;
+	}
+
 	pdata = &omap_up;
 	pdata_size = sizeof(struct omap_uart_port_info);
 #endif
@@ -833,13 +845,30 @@ void __init omap_serial_init_port(struct omap_board_data *bdata)
 }
 
 /**
- * omap_serial_init() - initialize all supported serial ports
+ * omap_serial_init_port() - initialize single serial port
+ * @bdata: port specific board data pointer
+ *
+ * This function initialies serial driver for given port only.
+ * Platforms can call this function instead of omap_serial_init()
+ * if they don't plan to use all available UARTs as serial ports.
+ *
+ * Don't mix calls to omap_serial_init_port() and omap_serial_init(),
+ * use only one of the two.
+ */
+void __init omap_serial_init_port(struct omap_board_data *bdata)
+{
+	omap_serial_board_init_port(bdata, NULL);
+}
+
+/**
+ * omap_serial_board_init() - initialize all supported serial ports
+ * @info: platform specific data pointer
  *
  * Initializes all available UARTs as serial ports. Platforms
  * can call this function when they want to have default behaviour
  * for serial ports (e.g initialize them all as serial ports).
  */
-void __init omap_serial_init(void)
+void __init omap_serial_board_init(struct omap_uart_port_info *info)
 {
 	struct omap_uart_state *uart;
 	struct omap_board_data bdata;
@@ -849,7 +878,21 @@ void __init omap_serial_init(void)
 		bdata.flags = 0;
 		bdata.pads = NULL;
 		bdata.pads_cnt = 0;
-		omap_serial_init_port(&bdata);
-
+		if (!info)
+			omap_serial_board_init_port(&bdata, NULL);
+		else
+			omap_serial_board_init_port(&bdata, &info[uart->num]);
 	}
+}
+
+/**
+ * omap_serial_init() - initialize all supported serial ports
+ *
+ * Initializes all available UARTs.
+ * Platforms can call this function when they want to have default behaviour
+ * for serial ports (e.g initialize them all as serial ports).
+ */
+void __init omap_serial_init(void)
+{
+	omap_serial_board_init(NULL);
 }

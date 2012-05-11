@@ -63,6 +63,10 @@ struct omap_uart_port_info {
 	resource_size_t		mapbase;	/* resource base */
 	unsigned long		irqflags;	/* request_irq flags */
 	upf_t			flags;		/* UPF_* flags */
+	int					gpio_dxen; /* or -EINVAL */
+	int					gpio_rxen; /* or -EINVAL */
+	int					gpio_mode; /* or -EINVAL */
+
 };
 
 struct uart_omap_dma {
@@ -111,6 +115,11 @@ struct uart_omap_port {
 	unsigned char		msr_saved_flags;
 	char			name[20];
 	unsigned long		port_activity;
+	struct serial_rs485	rs485;
+	unsigned int		tx_in_progress:1, tx_wait_end:1;
+	int					gpio_dxen; /* or -EINVAL */
+	int					gpio_rxen; /* or -EINVAL */
+	int					gpio_mode; /* or -EINVAL */
 };
 
 #endif /* __OMAP_SERIAL_H__ */
