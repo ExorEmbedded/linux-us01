@@ -70,6 +70,7 @@ static inline u32 ehci_read(void __iomem *base, u32 reg)
 
 static void omap_ehci_soft_phy_reset(struct platform_device *pdev, u8 port)
 {
+#if 0  
 	struct usb_hcd	*hcd = dev_get_drvdata(&pdev->dev);
 	unsigned long timeout = jiffies + msecs_to_jiffies(1000);
 	unsigned reg = 0;
@@ -96,6 +97,7 @@ static void omap_ehci_soft_phy_reset(struct platform_device *pdev, u8 port)
 			break;
 		}
 	}
+#endif	
 }
 
 static void disable_put_regulator(
