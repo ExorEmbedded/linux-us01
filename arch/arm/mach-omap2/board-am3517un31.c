@@ -276,14 +276,6 @@ static struct omap_dss_board_info am3517_evm_dss_data = {
 	.default_device	= &am3517_evm_lcd_device,
 };
 
-static struct platform_device am3517_evm_dss_device = {
-	.name		= "omapdss",
-	.id		= -1,
-	.dev		= {
-		.platform_data	= &am3517_evm_dss_data,
-	},
-};
-
 //BACKLIGHT
 static struct platform_pwm_backlight_data backlight_data = {
 	.pwm_id		= 1,
@@ -595,7 +587,9 @@ static const struct usbhs_omap_board_data usbhs_bdata __initconst = {
 };
 
 
-/* NOR flash information */
+/*-------------------------------------------------------------------------------------------------------- 
+  NOR flash configuration functions and types 
+ ---------------------------------------------------------------------------------------------------------*/
 //STE
 /*La NOR è organizzata come segue:
 - Base address 0x8000000, settori da 128KBytes, size = 128MBytes, mappatura lineare
@@ -605,19 +599,58 @@ NORFLASH memory map
 Sector0				offset 0x00000		Xloader
 Sector1-2			offset 0x20000		U-boot image
 Sector3				offset 0x60000		U-boot environment
-Sector4				offset 0x80000		RFU (will be used for X-FIS support)
-Sector5...7			offset 0xa0000		Splash image
-Sector8...47		offset 0x100000		ConfigOs image
-Sector48...359		offset 0x600000		WCE6 image (actually native WCE6 .bin image is handled; about 40MB size is assumed)
-Sector360...1023	offset 0x2d00000    Filesystem (handled by WCE6)
-End					offset 0x8000000
+Sector4				offset 0x80000		X-FIS table
+Sector5...??			offset 0xa0000		Splash image
+Sector??...??			offset 0x?????		ConfigOs image
+Sector??...??			offset 0x?????		mainOS image
+Sector??0...1023		offset 0x?????    	Filesystem
+End				offset 0x8000000
 
-SPLASH 		  384KB 3 sectors
-CONFIGOS 	 5120KB offset 0x100000 size 4786614 40 sectors
-MAINOS		39936KB offset 0x600000 size 12598384 312 sectors
-Filesystem 664 sectors
-Tot 1024 sectors
 */
+#define AM3517_EVM_NOR_BASE             0x08000000
+#define AM3517_UN31_XFIS_BASE		(AM3517_EVM_NOR_BASE + 0x80000)
+#define XFIS_ENTRY_SIZE			32
+#define XFIS_ENTRY_CHKSUM_OFF		0x1C
+
+typedef enum _image_type 
+{
+   SPLASH_IMAGE = 4,
+   CONFIG_IMAGE,
+   MAIN_IMAGE,
+   FILE_SYSTEM
+}image_type;
+
+/* Check if the selected xfis entry is valid. If valid, returns the flash_base address of the corresponding partition, otherwise returns 0
+*  NOTE: Direct access to the NORFLASH chip is performed
+*/
+static unsigned long __init xfis_entry_valid(image_type type)
+{
+  int i;
+  unsigned long checksum = 0;
+  void* entrybase = NULL;
+  unsigned long flash_addr = 0;
+  
+  entrybase = ioremap(AM3517_UN31_XFIS_BASE + (XFIS_ENTRY_SIZE * ((int)type - 4)), XFIS_ENTRY_SIZE);
+  if(entrybase == NULL)
+  {
+    return 0;
+  }
+  
+  for(i=0;i<7;i++)
+    checksum += ioread32(entrybase + i*sizeof(long));
+  
+  if(checksum != ioread32(entrybase + XFIS_ENTRY_CHKSUM_OFF))
+  {
+    printk(KERN_DEBUG "xfis entry %d is not valid: wrong checksum\n", (int)type);
+    iounmap(entrybase);
+    return 0;
+  }
+
+  flash_addr = ioread32(entrybase);
+    
+  iounmap(entrybase);
+  return flash_addr;
+}
 
 static struct mtd_partition am3517_evm_norflash_partitions[] = {
 	/* Xloader in first sector */
@@ -652,31 +685,56 @@ static struct mtd_partition am3517_evm_norflash_partitions[] = {
 	{
 		.name           = "splashimage",
 		.offset         = MTDPART_OFS_APPEND,
-		.size           = 3 * SZ_128K,
+		.size           = 7 * SZ_128K,
 		.mask_flags     = 0
 	},
 	/* ConfigOs */
 	{
 		.name           = "configOs",
 		.offset         = MTDPART_OFS_APPEND,
-		.size           = 40 * SZ_128K,
+		.size           = 120 * SZ_128K,
 		.mask_flags     = 0
 	},
-	/* Main Is */
+	/* MainOs */
 	{
 		.name           = "mainOs",
 		.offset         = MTDPART_OFS_APPEND,
-		.size           = 312 * SZ_128K,
+		.size           = 30 * SZ_128K,
 		.mask_flags     = 0
 	},
 	/* File System */
 	{
-			.name           = "filesystem",
-			.offset         = MTDPART_OFS_APPEND,
-			.size           = MTDPART_SIZ_FULL,
-			.mask_flags     = 0
+		.name           = "filesystem",
+		.offset         = MTDPART_OFS_APPEND,
+		.size           = MTDPART_SIZ_FULL,
+		.mask_flags     = 0
 	}
 };
+
+
+/* Syncronizes the mtd partition table with the xfis table (if entries are valid) otherwise keeps the default
+*/
+static void __init sync_partitions_to_xfis(void)
+{
+  static unsigned long flash_addr[8];
+  int i;
+  int f_entriesok = 1;
+  
+  for(i=(int)SPLASH_IMAGE; i <= (int)FILE_SYSTEM; i++)
+  {
+    flash_addr[i] = xfis_entry_valid(i);
+    if(flash_addr[i] == 0) 
+      f_entriesok = 0;
+  }
+  
+  /* Splahimage, mainOS, configOS, FS entries are all OK: override default sizes with Xfis table contents */
+  if(f_entriesok)
+    for(i=(int)SPLASH_IMAGE; i < (int)FILE_SYSTEM; i++)
+    {
+      am3517_evm_norflash_partitions[i].size = flash_addr[i+1] - flash_addr[i];
+    }
+}
+
 
 static struct physmap_flash_data am3517_evm_norflash_data = {
 	.width          = 2,
@@ -684,7 +742,6 @@ static struct physmap_flash_data am3517_evm_norflash_data = {
 	.nr_parts       = ARRAY_SIZE(am3517_evm_norflash_partitions),
 };
 
-#define AM3517_EVM_NOR_BASE             0x08000000
 static struct resource am3517_evm_norflash_resource = {
 	.start          = AM3517_EVM_NOR_BASE,
 	.end            = AM3517_EVM_NOR_BASE + SZ_128M - 1,
@@ -726,6 +783,7 @@ static void __init am3517_nor_init(void)
 
 	if (norcs < GPMC_CS_NUM) {
 		printk(KERN_INFO "Registering NOR on CS%d\n", norcs);
+		sync_partitions_to_xfis();
 		if (platform_device_register(&am3517_evm_norflash_device) < 0)
 			printk(KERN_ERR "Unable to register NOR device\n");
 	}
@@ -925,9 +983,9 @@ static void __init am3517_evm_init(void)
 static int __init am3517_evm_early_param(char *cmdline)
 {
 	char *options;
-
+	
 	printk(KERN_DEBUG "Un31 board_version value: %s\n", cmdline);
-
+	
 	options = strchr(cmdline, ',');
 	if(!options) {
 		printk(KERN_ERR "Un31 board_version malformed parameter: %s\n", cmdline);
