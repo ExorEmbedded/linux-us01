@@ -1153,6 +1153,7 @@ printk(KERN_INFO "OMAP SERIAL ioctl\n");
 			up->tx_in_progress = 0;
 			up->tx_wait_end = 0;
 			gpio_set_value(up->gpio_mode, 0); /* RS232 */
+			gpio_set_value(up->gpio_dxen, 1);
 		} else {
 			gpio_set_value(up->gpio_mode, 1); /* RS485/RS422 */
 printk(KERN_INFO "RS485 mode Enabled %d\n", rs485conf.flags);
