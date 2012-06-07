@@ -658,14 +658,14 @@ static struct mtd_partition am3517_evm_norflash_partitions[] = {
 		.name           = "xloader",
 		.offset         = 0,
 		.size           = SZ_128K,
-		.mask_flags     = MTD_WRITEABLE, /* force read-only */
+		.mask_flags     = 0,
 	},
 	/* bootloader (U-Boot, etc) in the next 2 sectors */
 	{
 		.name           = "bootloader",
 		.offset         = MTDPART_OFS_APPEND,
 		.size           = 2 * SZ_128K,
-		.mask_flags     = MTD_WRITEABLE, /* force read-only */
+		.mask_flags     = 0,
 	},
 	/* bootloader params in the next 1 sectors */
 	{
