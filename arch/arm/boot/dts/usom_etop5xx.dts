@@ -16,6 +16,18 @@ compatible = "ti,am335x-evm", "ti,am33xx", "ti,";
 cpus {
 	cpu@0 {
 		cpu0-supply = <&vdd1_reg>;
+		/*
+		* To consider voltage drop between PMIC and SoC,
+		* tolerance value is reduced to 2% from 4% and
+		* voltage value is increased as a precaution.
+		*/
+		operating-points = <
+		/* kHz    uV */
+		1000000	1325000
+		800000	1300000
+		600000  1112000
+		300000   969000
+		>;
 	};
 };
 
@@ -359,6 +371,9 @@ am33xx_pinmux: pinmux@44e10800 {
 		};
 
 		lcdc: lcdc@0x4830e000 {
+			compatible = "ti,am3352-lcdc", "ti,da830-lcdc";
+			reg =  <0x4830e000 0x1000>;
+			interrupts = <36>;
 			pinctrl-names = "default", "sleep";
 			pinctrl-0 = <&lcd_pins_default>;
 			pinctrl-1 = <&lcd_pins_sleep>;
