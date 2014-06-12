@@ -211,7 +211,8 @@ am33xx_pinmux: pinmux@44e10800 {
 				0xe4 0x00	/* lcd_hsync.lcd_hsync, OUTPUT | MODE0 */
 				0xe8 0x00	/* lcd_pclk.lcd_pclk, OUTPUT | MODE0 */
 				0xec 0x00	/* lcd_ac_bias_en.lcd_ac_bias_en, OUTPUT | MODE0 */
-
+				0x7c 0x07	/* gpmc_csn0: EN_VDD / gpio1_29 OUTPUT | MODE7 */
+				0x88 0x07	/* gpmc_csn3: EN_BL / gpio2_0 OUTPUT | MODE7 */
 			>;
 		};
 
@@ -369,32 +370,6 @@ am33xx_pinmux: pinmux@44e10800 {
 				pinctrl-1 = <&ecap0_pins_sleep>;
 			};
 		};
-
-		lcdc: lcdc@0x4830e000 {
-			compatible = "ti,am3352-lcdc", "ti,da830-lcdc";
-			reg =  <0x4830e000 0x1000>;
-			interrupts = <36>;
-			pinctrl-names = "default", "sleep";
-			pinctrl-0 = <&lcd_pins_default>;
-			pinctrl-1 = <&lcd_pins_sleep>;
-			status = "okay";
-			display-timings {
-				800x480p62 {
-					clock-frequency = <30000000>;
-					hactive = <800>;
-					vactive = <480>;
-					hfront-porch = <39>;
-					hback-porch = <39>;
-					hsync-len = <47>;
-					vback-porch = <29>;
-					vfront-porch = <13>;
-					vsync-len = <2>;
-					hsync-active = <1>;
-					vsync-active = <1>;
-				};
-			};
-		};
-
 	};
 
 	vbat: fixedregulator@0 {
@@ -412,40 +387,47 @@ am33xx_pinmux: pinmux@44e10800 {
 		default-brightness-level = <8>;
 	};
 
-	panel {
-		compatible = "ti,tilcdc,panel";
-		status = "okay";
-		pinctrl-names = "default";
-		pinctrl-0 = <&lcd_pins_default>;
-		panel-info {
-			ac-bias           = <255>;
-			ac-bias-intrpt    = <0>;
-			dma-burst-sz      = <16>;
-			bpp               = <16>;
-			fdd               = <0x80>;
-			sync-edge         = <0>;
-			sync-ctrl         = <1>;
-			raster-order      = <0>;
-			fifo-th           = <0>;
-		};
-
-		display-timings {
-			800x480p62 {
-				clock-frequency = <30000000>;
-				hactive = <800>;
-				vactive = <480>;
-				hfront-porch = <39>;
-				hback-porch = <39>;
-				hsync-len = <47>;
-				vback-porch = <29>;
-				vfront-porch = <13>;
-				vsync-len = <2>;
-				hsync-active = <1>;
-				vsync-active = <1>;
-			};
-		};
+	fb: fb@4830e000 {
+	  compatible = "ti,am33xx-tilcdc";
+	  reg = <0x4830e000 0x1000>;
+	  interrupt-parent = <&intc>;
+	  interrupts = <36>;
+	  ti,hwmods = "lcdc";
 	};
-
+	
+	lcd3 {
+	  compatible = "ti,tilcdc,panel";
+	  pinctrl-names = "default";
+	  pinctrl-0 = <&lcd_pins_default>;
+	  panel-info {
+	    ac-bias           = <255>;
+	    ac-bias-intrpt    = <0>;
+	    dma-burst-sz      = <16>;
+	    bpp               = <16>;
+	    fdd               = <0x80>;
+	    sync-edge         = <0>;
+	    sync-ctrl         = <1>;
+	    raster-order      = <0>;
+	    fifo-th           = <0>;
+	  };
+	  display-timings {
+	    native-mode = <&timing0>;
+	    timing0: 800x480p62 {
+	      clock-frequency = <30000000>;
+	      hactive = <800>;
+	      vactive = <480>;
+	      hfront-porch = <39>;
+	      hback-porch = <39>;
+	      hsync-len = <47>;
+	      vback-porch = <29>;
+	      vfront-porch = <13>;
+	      vsync-len = <2>;
+	      hsync-active = <1>;
+	      vsync-active = <1>;
+	    };
+	    
+	  };
+	};
 };
 
 #include "tps65910.dtsi"

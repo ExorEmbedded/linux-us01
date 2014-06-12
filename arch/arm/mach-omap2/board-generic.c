@@ -23,6 +23,9 @@
 #include "common-board-devices.h"
 #include "dss-common.h"
 
+#include <linux/io.h>
+#include <linux/gpio.h>
+
 #if !(defined(CONFIG_ARCH_OMAP2) || defined(CONFIG_ARCH_OMAP3))
 #define intc_of_init	NULL
 #endif
@@ -53,6 +56,9 @@ static void __init legacy_init_ehci_clk(char *clkname)
 
 static void __init omap_generic_init(void)
 {
+#ifdef CONFIG_SOC_AM33XX
+	int r;
+#endif
 	omap_sdrc_init(NULL, NULL);
 
 	of_platform_populate(NULL, omap_dt_match_table, NULL, NULL);
@@ -70,6 +76,20 @@ static void __init omap_generic_init(void)
 		omap_4430sdp_display_init_of();
 	else if (of_machine_is_compatible("ti,omap5-uevm"))
 		legacy_init_ehci_clk("auxclk1_ck");
+#ifdef CONFIG_SOC_AM33XX	
+	/* HACK: Statically enable the display on HSE03 and ECO carriers
+	*/
+	r=gpio_request(61,"en_vdd");
+	if (r)
+	  printk(KERN_ERR "!!!! failed to get en_vdd pin\n");
+	
+	gpio_direction_output(61,1);
+	
+	r=gpio_request(64,"en_bl");
+	if (r)
+	  printk(KERN_ERR "!!!! failed to get en_bl pin\n");
+	gpio_direction_output(64,1);
+#endif
 }
 
 #ifdef CONFIG_SOC_OMAP2420
