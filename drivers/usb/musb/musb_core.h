@@ -46,6 +46,7 @@
 #include <linux/usb.h>
 #include <linux/usb/otg.h>
 #include <linux/usb/musb.h>
+#include <linux/phy/phy.h>
 
 struct musb;
 struct musb_hw_ep;
@@ -294,6 +295,7 @@ struct musb {
 
 	irqreturn_t		(*isr)(int, void *);
 	struct work_struct	irq_work;
+	struct work_struct	babble_work;
 	u16			hwvers;
 
 	u16			intrrxe;
@@ -341,6 +343,7 @@ struct musb {
 	u16			int_tx;
 
 	struct usb_phy		*xceiv;
+	struct phy		*phy;
 
 	int nIrq;
 	unsigned		irq_wake:1;
@@ -421,6 +424,8 @@ struct musb {
 	struct musb_hdrc_config	*config;
 
 	int			xceiv_old_state;
+
+	bool			suspended;	/* controller suspended */
 #ifdef CONFIG_DEBUG_FS
 	struct dentry		*debugfs_root;
 #endif
@@ -504,6 +509,10 @@ extern const char musb_driver_name[];
 
 extern void musb_stop(struct musb *musb);
 extern void musb_start(struct musb *musb);
+void musb_babble_reinit(struct musb *musb);
+
+extern int musb_get_id(struct device *dev, gfp_t gfp_mask);
+extern void musb_put_id(struct device *dev, int id);
 
 extern void musb_write_fifo(struct musb_hw_ep *ep, u16 len, const u8 *src);
 extern void musb_read_fifo(struct musb_hw_ep *ep, u16 len, u8 *dst);

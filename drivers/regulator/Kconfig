@@ -371,6 +371,15 @@ config REGULATOR_PALMAS
 	  on the muxing. This is handled automatically in the driver by
 	  reading the mux info from OTP.
 
+config REGULATOR_PBIAS
+	tristate "PBIAS OMAP regulator driver"
+	depends on ARCH_OMAP && MFD_SYSCON
+	help
+	  Say y here to support the pbias regulator for mmc1 sd card i/o
+	  on OMAP SoCs.
+	  This driver provides support for OMAP pbias modelled
+	  regulators.
+
 config REGULATOR_PCAP
 	tristate "Motorola PCAP2 regulator driver"
 	depends on EZX_PCAP
@@ -492,6 +501,15 @@ config REGULATOR_TPS65217
 	  voltage regulators. It supports software based voltage control
 	  for different voltage domains
 
+config REGULATOR_TPS65218
+	tristate "TI TPS65218 Power regulators"
+	depends on MFD_TPS65218
+	help
+	  This driver supports TPS65218 voltage regulator chips. TPS65218
+	  provides six step-down converters and one general-purpose LDO
+	  voltage regulators. It supports software based voltage control
+	  for different voltage domains
+
 config REGULATOR_TPS6524X
 	tristate "TI TPS6524X Power regulators"
 	depends on SPI
@@ -570,6 +588,20 @@ config REGULATOR_WM8994
 	help
 	  This driver provides support for the voltage regulators on the
 	  WM8994 CODEC.
+
+config REGULATOR_TIAVSCLASS0
+	tristate "Adaptive Voltage Scaling class 0 support for TI SoCs"
+	depends on ARCH_OMAP2PLUS
+	help
+	  AVS is a power management technique which finely controls the
+	  operating voltage of a device in order to optimize (i.e. reduce)
+	  its power consumption.
+	  At a given operating point, the voltage is adapted depending on
+	  static factors (chip manufacturing process) and this adapted
+	  voltage is made available in an efuse offset.
+	  AVS is also called SmartReflex on OMAP devices.
+
+	  Say Y here to enable Adaptive Voltage Scaling class 0 support.
 
 endif
 

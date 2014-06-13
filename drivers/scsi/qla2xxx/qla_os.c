@@ -494,18 +494,14 @@ qla24xx_pci_info_str(struct scsi_qla_host *vha, char *str)
 	static char *pci_bus_modes[] = { "33", "66", "100", "133", };
 	struct qla_hw_data *ha = vha->hw;
 	uint32_t pci_bus;
-	int pcie_reg;
 
-	pcie_reg = pci_pcie_cap(ha->pdev);
-	if (pcie_reg) {
+	if (pci_is_pcie(ha->pdev)) {
 		char lwstr[6];
-		uint16_t pcie_lstat, lspeed, lwidth;
+		uint32_t lstat, lspeed, lwidth;
 
-		pcie_reg += PCI_EXP_LNKCAP;
-		pci_read_config_word(ha->pdev, pcie_reg, &pcie_lstat);
-		lspeed = pcie_lstat & (BIT_0 | BIT_1 | BIT_2 | BIT_3);
-		lwidth = (pcie_lstat &
-		    (BIT_4 | BIT_5 | BIT_6 | BIT_7 | BIT_8 | BIT_9)) >> 4;
+		pcie_capability_read_dword(ha->pdev, PCI_EXP_LNKCAP, &lstat);
+		lspeed = lstat & PCI_EXP_LNKCAP_SLS;
+		lwidth = (lstat & PCI_EXP_LNKCAP_MLW) >> 4;
 
 		strcpy(str, "PCIe (");
 		switch (lspeed) {
@@ -2616,7 +2612,7 @@ qla2x00_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	    ha->flags.enable_64bit_addressing ? "enable" :
 	    "disable");
 	ret = qla2x00_mem_alloc(ha, req_length, rsp_length, &req, &rsp);
-	if (ret) {
+	if (!ret) {
 		ql_log_pci(ql_log_fatal, pdev, 0x0031,
 		    "Failed to allocate memory for adapter, aborting.\n");
 
@@ -3541,10 +3537,10 @@ qla2x00_mem_alloc(struct qla_hw_data *ha, uint16_t req_len, uint16_t rsp_len,
 	else {
 		qla2x00_set_reserved_loop_ids(ha);
 		ql_dbg_pci(ql_dbg_init, ha->pdev, 0x0123,
-		    "loop_id_map=%p.\n", ha->loop_id_map);
+		    "loop_id_map=%p. \n", ha->loop_id_map);
 	}
 
-	return 0;
+	return 1;
 
 fail_async_pd:
 	dma_pool_free(ha->s_dma_pool, ha->ex_init_cb, ha->ex_init_cb_dma);

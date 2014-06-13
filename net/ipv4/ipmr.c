@@ -2253,14 +2253,13 @@ int ipmr_get_route(struct net *net, struct sk_buff *skb,
 }
 
 static int ipmr_fill_mroute(struct mr_table *mrt, struct sk_buff *skb,
-			    u32 portid, u32 seq, struct mfc_cache *c, int cmd,
-			    int flags)
+			    u32 portid, u32 seq, struct mfc_cache *c, int cmd)
 {
 	struct nlmsghdr *nlh;
 	struct rtmsg *rtm;
 	int err;
 
-	nlh = nlmsg_put(skb, portid, seq, cmd, sizeof(*rtm), flags);
+	nlh = nlmsg_put(skb, portid, seq, cmd, sizeof(*rtm), NLM_F_MULTI);
 	if (nlh == NULL)
 		return -EMSGSIZE;
 
@@ -2328,7 +2327,7 @@ static void mroute_netlink_event(struct mr_table *mrt, struct mfc_cache *mfc,
 	if (skb == NULL)
 		goto errout;
 
-	err = ipmr_fill_mroute(mrt, skb, 0, 0, mfc, cmd, 0);
+	err = ipmr_fill_mroute(mrt, skb, 0, 0, mfc, cmd);
 	if (err < 0)
 		goto errout;
 
@@ -2367,8 +2366,7 @@ static int ipmr_rtm_dumproute(struct sk_buff *skb, struct netlink_callback *cb)
 				if (ipmr_fill_mroute(mrt, skb,
 						     NETLINK_CB(cb->skb).portid,
 						     cb->nlh->nlmsg_seq,
-						     mfc, RTM_NEWROUTE,
-						     NLM_F_MULTI) < 0)
+						     mfc, RTM_NEWROUTE) < 0)
 					goto done;
 next_entry:
 				e++;
@@ -2382,8 +2380,7 @@ next_entry:
 			if (ipmr_fill_mroute(mrt, skb,
 					     NETLINK_CB(cb->skb).portid,
 					     cb->nlh->nlmsg_seq,
-					     mfc, RTM_NEWROUTE,
-					     NLM_F_MULTI) < 0) {
+					     mfc, RTM_NEWROUTE) < 0) {
 				spin_unlock_bh(&mfc_unres_lock);
 				goto done;
 			}

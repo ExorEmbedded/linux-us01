@@ -196,7 +196,7 @@ static void titsc_step_config(struct titsc *ts_dev)
 
 	/* The steps1 … end and bit 0 for TS_Charge */
 	stepenable = (1 << (end_step + 2)) - 1;
-	am335x_tsc_se_set(ts_dev->mfd_tscadc, stepenable);
+	am335x_tsc_se_set_cont(ts_dev->mfd_tscadc, stepenable);
 }
 
 static void titsc_read_coordinates(struct titsc *ts_dev,
@@ -316,7 +316,7 @@ static irqreturn_t titsc_irq(int irq, void *dev)
 
 	if (irqclr) {
 		titsc_writel(ts_dev, REG_IRQSTATUS, irqclr);
-		am335x_tsc_se_update(ts_dev->mfd_tscadc);
+		am335x_tsc_se_update(ts_dev->mfd_tscadc, 0);
 		return IRQ_HANDLED;
 	}
 	return IRQ_NONE;
@@ -348,8 +348,15 @@ static int titsc_parse_dt(struct platform_device *pdev,
 	if (err < 0)
 		return err;
 
-	err = of_property_read_u32(node, "ti,coordiante-readouts",
+	/*
+	 * try with new binding first. If it fails, still try with
+	 * bogus, miss-spelled version.
+	 */
+	err = of_property_read_u32(node, "ti,coordinate-readouts",
 			&ts_dev->coordinate_readouts);
+	if (err < 0)
+		err = of_property_read_u32(node, "ti,coordiante-readouts",
+				&ts_dev->coordinate_readouts);
 	if (err < 0)
 		return err;
 
@@ -458,6 +465,9 @@ static int titsc_suspend(struct device *dev)
 
 	tscadc_dev = ti_tscadc_dev_get(to_platform_device(dev));
 	if (device_may_wakeup(tscadc_dev->dev)) {
+		/* Flush any pending interrupts */
+		titsc_writel(ts_dev, REG_IRQSTATUS, 0xffffffff);
+
 		idle = titsc_readl(ts_dev, REG_IRQENABLE);
 		titsc_writel(ts_dev, REG_IRQENABLE,
 				(idle | IRQENB_HW_PEN));

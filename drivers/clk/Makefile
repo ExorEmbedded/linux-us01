@@ -8,6 +8,7 @@ obj-$(CONFIG_COMMON_CLK)	+= clk-fixed-rate.o
 obj-$(CONFIG_COMMON_CLK)	+= clk-gate.o
 obj-$(CONFIG_COMMON_CLK)	+= clk-mux.o
 obj-$(CONFIG_COMMON_CLK)	+= clk-composite.o
+obj-$(CONFIG_COMMON_CLK)	+= clk-gpio.o
 
 # SoCs specific
 obj-$(CONFIG_ARCH_BCM2835)	+= clk-bcm2835.o
@@ -32,6 +33,7 @@ obj-$(CONFIG_ARCH_VT8500)	+= clk-vt8500.o
 obj-$(CONFIG_ARCH_ZYNQ)		+= zynq/
 obj-$(CONFIG_ARCH_TEGRA)	+= tegra/
 obj-$(CONFIG_PLAT_SAMSUNG)	+= samsung/
+obj-$(CONFIG_ARCH_OMAP)		+= ti/
 
 obj-$(CONFIG_X86)		+= x86/
 
@@ -43,3 +45,4 @@ obj-$(CONFIG_COMMON_CLK_SI5351) += clk-si5351.o
 obj-$(CONFIG_COMMON_CLK_S2MPS11) += clk-s2mps11.o
 obj-$(CONFIG_CLK_TWL6040)	+= clk-twl6040.o
 obj-$(CONFIG_CLK_PPC_CORENET)	+= clk-ppc-corenet.o
+obj-$(CONFIG_COMMON_CLK_PALMAS)	+= clk-palmas.o

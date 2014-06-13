@@ -1174,23 +1174,16 @@ int evergreen_set_uvd_clocks(struct radeon_device *rdev, u32 vclk, u32 dclk)
 
 void evergreen_fix_pci_max_read_req_size(struct radeon_device *rdev)
 {
-	u16 ctl, v;
-	int err;
+	int readrq;
+	u16 v;
 
-	err = pcie_capability_read_word(rdev->pdev, PCI_EXP_DEVCTL, &ctl);
-	if (err)
-		return;
-
-	v = (ctl & PCI_EXP_DEVCTL_READRQ) >> 12;
-
+	readrq = pcie_get_readrq(rdev->pdev);
+	v = ffs(readrq) - 8;
 	/* if bios or OS sets MAX_READ_REQUEST_SIZE to an invalid value, fix it
 	 * to avoid hangs or perfomance issues
 	 */
-	if ((v == 0) || (v == 6) || (v == 7)) {
-		ctl &= ~PCI_EXP_DEVCTL_READRQ;
-		ctl |= (2 << 12);
-		pcie_capability_write_word(rdev->pdev, PCI_EXP_DEVCTL, ctl);
-	}
+	if ((v == 0) || (v == 6) || (v == 7))
+		pcie_set_readrq(rdev->pdev, 512);
 }
 
 static bool dce4_is_in_vblank(struct radeon_device *rdev, int crtc)
@@ -4249,8 +4242,8 @@ void evergreen_disable_interrupt_state(struct radeon_device *rdev)
 		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC5_REGISTER_OFFSET, 0);
 	}
 
-	/* only one DAC on DCE5 */
-	if (!ASIC_IS_DCE5(rdev))
+	/* only one DAC on DCE6 */
+	if (!ASIC_IS_DCE6(rdev))
 		WREG32(DACA_AUTODETECT_INT_CONTROL, 0);
 	WREG32(DACB_AUTODETECT_INT_CONTROL, 0);
 
@@ -5061,10 +5054,25 @@ static int evergreen_startup(struct radeon_device *rdev)
 	evergreen_mc_program(rdev);
 
 	if (ASIC_IS_DCE5(rdev)) {
+		if (!rdev->me_fw || !rdev->pfp_fw || !rdev->rlc_fw || !rdev->mc_fw) {
+			r = ni_init_microcode(rdev);
+			if (r) {
+				DRM_ERROR("Failed to load firmware!\n");
+				return r;
+			}
+		}
 		r = ni_mc_load_microcode(rdev);
 		if (r) {
 			DRM_ERROR("Failed to load MC firmware!\n");
 			return r;
+		}
+	} else {
+		if (!rdev->me_fw || !rdev->pfp_fw || !rdev->rlc_fw) {
+			r = r600_init_microcode(rdev);
+			if (r) {
+				DRM_ERROR("Failed to load firmware!\n");
+				return r;
+			}
 		}
 	}
 
@@ -5293,24 +5301,6 @@ int evergreen_init(struct radeon_device *rdev)
 	if (r)
 		return r;
 
-	if (ASIC_IS_DCE5(rdev)) {
-		if (!rdev->me_fw || !rdev->pfp_fw || !rdev->rlc_fw || !rdev->mc_fw) {
-			r = ni_init_microcode(rdev);
-			if (r) {
-				DRM_ERROR("Failed to load firmware!\n");
-				return r;
-			}
-		}
-	} else {
-		if (!rdev->me_fw || !rdev->pfp_fw || !rdev->rlc_fw) {
-			r = r600_init_microcode(rdev);
-			if (r) {
-				DRM_ERROR("Failed to load firmware!\n");
-				return r;
-			}
-		}
-	}
-
 	rdev->ring[RADEON_RING_TYPE_GFX_INDEX].ring_obj = NULL;
 	r600_ring_init(rdev, &rdev->ring[RADEON_RING_TYPE_GFX_INDEX], 1024 * 1024);
 
@@ -5372,9 +5362,9 @@ void evergreen_fini(struct radeon_device *rdev)
 	radeon_wb_fini(rdev);
 	radeon_ib_pool_fini(rdev);
 	radeon_irq_kms_fini(rdev);
+	evergreen_pcie_gart_fini(rdev);
 	uvd_v1_0_fini(rdev);
 	radeon_uvd_fini(rdev);
-	evergreen_pcie_gart_fini(rdev);
 	r600_vram_scratch_fini(rdev);
 	radeon_gem_fini(rdev);
 	radeon_fence_driver_fini(rdev);

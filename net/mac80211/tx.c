@@ -477,20 +477,6 @@ ieee80211_tx_h_unicast_ps_buf(struct ieee80211_tx_data *tx)
 		       sta->sta.addr, sta->sta.aid, ac);
 		if (tx->local->total_ps_buffered >= TOTAL_MAX_TX_BUFFER)
 			purge_old_ps_buffers(tx->local);
-
-		/* sync with ieee80211_sta_ps_deliver_wakeup */
-		spin_lock(&sta->ps_lock);
-		/*
-		 * STA woke up the meantime and all the frames on ps_tx_buf have
-		 * been queued to pending queue. No reordering can happen, go
-		 * ahead and Tx the packet.
-		 */
-		if (!test_sta_flag(sta, WLAN_STA_PS_STA) &&
-		    !test_sta_flag(sta, WLAN_STA_PS_DRIVER)) {
-			spin_unlock(&sta->ps_lock);
-			return TX_CONTINUE;
-		}
-
 		if (skb_queue_len(&sta->ps_tx_buf[ac]) >= STA_MAX_TX_BUFFER) {
 			struct sk_buff *old = skb_dequeue(&sta->ps_tx_buf[ac]);
 			ps_dbg(tx->sdata,
@@ -504,7 +490,6 @@ ieee80211_tx_h_unicast_ps_buf(struct ieee80211_tx_data *tx)
 		info->control.vif = &tx->sdata->vif;
 		info->flags |= IEEE80211_TX_INTFL_NEED_TXPROCESSING;
 		skb_queue_tail(&sta->ps_tx_buf[ac], tx->skb);
-		spin_unlock(&sta->ps_lock);
 
 		if (!timer_pending(&local->sta_cleanup))
 			mod_timer(&local->sta_cleanup,
@@ -889,7 +874,7 @@ static int ieee80211_fragment(struct ieee80211_tx_data *tx,
 	}
 
 	/* adjust first fragment's length */
-	skb_trim(skb, hdrlen + per_fragm);
+	skb->len = hdrlen + per_fragm;
 	return 0;
 }
 
@@ -2376,15 +2361,31 @@ static void ieee80211_update_csa(struct ieee80211_sub_if_data *sdata,
 	struct probe_resp *resp;
 	int counter_offset_beacon = sdata->csa_counter_offset_beacon;
 	int counter_offset_presp = sdata->csa_counter_offset_presp;
+	u8 *beacon_data;
+	size_t beacon_data_len;
 
-	/* warn if the driver did not check for/react to csa completeness */
-	if (WARN_ON(((u8 *)beacon->tail)[counter_offset_beacon] == 0))
+	switch (sdata->vif.type) {
+	case NL80211_IFTYPE_AP:
+		beacon_data = beacon->tail;
+		beacon_data_len = beacon->tail_len;
+		break;
+	case NL80211_IFTYPE_ADHOC:
+		beacon_data = beacon->head;
+		beacon_data_len = beacon->head_len;
+		break;
+	default:
+		return;
+	}
+	if (WARN_ON(counter_offset_beacon >= beacon_data_len))
 		return;
 
-	((u8 *)beacon->tail)[counter_offset_beacon]--;
+	/* warn if the driver did not check for/react to csa completeness */
+	if (WARN_ON(beacon_data[counter_offset_beacon] == 0))
+		return;
 
-	if (sdata->vif.type == NL80211_IFTYPE_AP &&
-	    counter_offset_presp) {
+	beacon_data[counter_offset_beacon]--;
+
+	if (sdata->vif.type == NL80211_IFTYPE_AP && counter_offset_presp) {
 		rcu_read_lock();
 		resp = rcu_dereference(sdata->u.ap.probe_resp);
 
@@ -2419,6 +2420,15 @@ bool ieee80211_csa_is_complete(struct ieee80211_vif *vif)
 			goto out;
 		beacon_data = beacon->tail;
 		beacon_data_len = beacon->tail_len;
+	} else if (vif->type == NL80211_IFTYPE_ADHOC) {
+		struct ieee80211_if_ibss *ifibss = &sdata->u.ibss;
+
+		beacon = rcu_dereference(ifibss->presp);
+		if (!beacon)
+			goto out;
+
+		beacon_data = beacon->head;
+		beacon_data_len = beacon->head_len;
 	} else {
 		WARN_ON(1);
 		goto out;
@@ -2502,6 +2512,10 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 
 		if (!presp)
 			goto out;
+
+		if (sdata->vif.csa_active)
+			ieee80211_update_csa(sdata, presp);
+
 
 		skb = dev_alloc_skb(local->tx_headroom + presp->head_len);
 		if (!skb)
@@ -2806,7 +2820,7 @@ ieee80211_get_buffered_bc(struct ieee80211_hw *hw,
 				cpu_to_le16(IEEE80211_FCTL_MOREDATA);
 		}
 
-		if (sdata->vif.type == NL80211_IFTYPE_AP)
+		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 			sdata = IEEE80211_DEV_TO_SUB_IF(skb->dev);
 		if (!ieee80211_tx_prepare(sdata, &tx, skb))
 			break;

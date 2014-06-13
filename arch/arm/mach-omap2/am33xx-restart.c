@@ -9,6 +9,7 @@
 #include <linux/reboot.h>
 
 #include "common.h"
+#include "prcm43xx.h"
 #include "prm-regbits-33xx.h"
 #include "prm33xx.h"
 

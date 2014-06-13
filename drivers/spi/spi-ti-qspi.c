@@ -31,8 +31,13 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/pinctrl/consumer.h>
-
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include <linux/spi/spi.h>
+
+static int enable_qspi;
+module_param(enable_qspi, int, 0);
+MODULE_PARM_DESC(enable_qspi, "enable qspi on AM437x board");
 
 struct ti_qspi_regs {
 	u32 clkctrl;
@@ -41,14 +46,13 @@ struct ti_qspi_regs {
 struct ti_qspi {
 	struct completion       transfer_complete;
 
-	/* IRQ synchronization */
-	spinlock_t              lock;
-
 	/* list synchronization */
 	struct mutex            list_lock;
 
 	struct spi_master	*master;
 	void __iomem            *base;
+	void __iomem            *ctrl_base;
+	void __iomem            *mmap_base;
 	struct clk		*fclk;
 	struct device           *dev;
 
@@ -57,7 +61,9 @@ struct ti_qspi {
 	u32 spi_max_frequency;
 	u32 cmd;
 	u32 dc;
-	u32 stat;
+
+	bool memory_mapped;
+	bool ctrl_mod;
 };
 
 #define QSPI_PID			(0x0)
@@ -113,6 +119,14 @@ struct ti_qspi {
 #define QSPI_CSPOL(n)			(1 << (1 + n * 8))
 #define QSPI_CKPOL(n)			(1 << (n * 8))
 
+#define MM_SWITCH	0x01
+#define MEM_CS		0x100
+#define MEM_CS_DIS	0xfffff0ff
+
+#define QSPI_SETUP0_RD_NORMAL   (0x0 << 12)
+#define QSPI_SETUP0_RD_DUAL     (0x1 << 12)
+#define QSPI_SETUP0_RD_QUAD     (0x3 << 12)
+
 #define	QSPI_FRAME			4096
 
 #define QSPI_AUTOSUSPEND_TIMEOUT         2000
@@ -129,12 +143,37 @@ static inline void ti_qspi_write(struct ti_qspi *qspi,
 	writel(val, qspi->base + reg);
 }
 
+void enable_qspi_memory_mapped(struct ti_qspi *qspi)
+{
+	u32 val;
+
+	ti_qspi_write(qspi, MM_SWITCH, QSPI_SPI_SWITCH_REG);
+	if (qspi->ctrl_mod) {
+		val = readl(qspi->ctrl_base);
+		val |= MEM_CS;
+		writel(val, qspi->ctrl_base);
+	}
+}
+
+void disable_qspi_memory_mapped(struct ti_qspi *qspi)
+{
+	u32 val;
+
+	ti_qspi_write(qspi, ~MM_SWITCH, QSPI_SPI_SWITCH_REG);
+	if (qspi->ctrl_mod) {
+		val = readl(qspi->ctrl_base);
+		val |= MEM_CS_DIS;
+		writel(val, qspi->ctrl_base);
+	}
+}
+
 static int ti_qspi_setup(struct spi_device *spi)
 {
 	struct ti_qspi	*qspi = spi_master_get_devdata(spi->master);
 	struct ti_qspi_regs *ctx_reg = &qspi->ctx_reg;
 	int clk_div = 0, ret;
 	u32 clk_ctrl_reg, clk_rate, clk_mask;
+	qspi->dc = 0;
 
 	if (spi->master->busy) {
 		dev_dbg(qspi->dev, "master busy doing other trasnfers\n");
@@ -165,7 +204,7 @@ static int ti_qspi_setup(struct spi_device *spi)
 			qspi->spi_max_frequency, clk_div);
 
 	ret = pm_runtime_get_sync(qspi->dev);
-	if (ret) {
+	if (ret < 0) {
 		dev_err(qspi->dev, "pm_runtime_get_sync() failed\n");
 		return ret;
 	}
@@ -182,6 +221,15 @@ static int ti_qspi_setup(struct spi_device *spi)
 	ti_qspi_write(qspi, clk_mask, QSPI_SPI_CLOCK_CNTRL_REG);
 	ctx_reg->clkctrl = clk_mask;
 
+	if (spi->mode & SPI_CPHA)
+		qspi->dc |= QSPI_CKPHA(spi->chip_select);
+	if (spi->mode & SPI_CPOL)
+		qspi->dc |= QSPI_CKPOL(spi->chip_select);
+	if (spi->mode & SPI_CS_HIGH)
+		qspi->dc |= QSPI_CSPOL(spi->chip_select);
+
+	ti_qspi_write(qspi, qspi->dc, QSPI_SPI_DC_REG);
+
 	pm_runtime_mark_last_busy(qspi->dev);
 	ret = pm_runtime_put_autosuspend(qspi->dev);
 	if (ret < 0) {
@@ -190,6 +238,46 @@ static int ti_qspi_setup(struct spi_device *spi)
 	}
 
 	return 0;
+}
+
+static void ti_qspi_configure_from_slave(struct spi_device *spi, u8 *val)
+{
+	struct ti_qspi  *qspi = spi_master_get_devdata(spi->master);
+	u32 memval, mode;
+
+	mode = spi->mode & (SPI_RX_DUAL | SPI_RX_QUAD);
+	memval =  (val[0] << 0) | (val[1] << 16) |
+			((val[2] - 1) << 8) | (val[3] << 10);
+
+	switch (mode) {
+	case SPI_RX_DUAL:
+		memval |= QSPI_SETUP0_RD_DUAL;
+		break;
+	case SPI_RX_QUAD:
+		memval |= QSPI_SETUP0_RD_QUAD;
+		break;
+	default:
+		memval |= QSPI_SETUP0_RD_NORMAL;
+		break;
+	}
+	ti_qspi_write(qspi, memval, QSPI_SPI_SETUP0_REG);
+}
+
+static inline void  __iomem *ti_qspi_get_mem_buf(struct spi_master *master)
+{
+	struct ti_qspi *qspi = spi_master_get_devdata(master);
+
+	pm_runtime_get_sync(qspi->dev);
+	enable_qspi_memory_mapped(qspi);
+	return qspi->mmap_base;
+}
+
+static void ti_qspi_put_mem_buf(struct spi_master *master)
+{
+	struct ti_qspi *qspi = spi_master_get_devdata(master);
+
+	disable_qspi_memory_mapped(qspi);
+	pm_runtime_put(qspi->dev);
 }
 
 static void ti_qspi_restore_ctx(struct ti_qspi *qspi)
@@ -345,16 +433,6 @@ static int ti_qspi_start_transfer_one(struct spi_master *master,
 	int status = 0, ret;
 	int frame_length;
 
-	/* setup device control reg */
-	qspi->dc = 0;
-
-	if (spi->mode & SPI_CPHA)
-		qspi->dc |= QSPI_CKPHA(spi->chip_select);
-	if (spi->mode & SPI_CPOL)
-		qspi->dc |= QSPI_CKPOL(spi->chip_select);
-	if (spi->mode & SPI_CS_HIGH)
-		qspi->dc |= QSPI_CSPOL(spi->chip_select);
-
 	frame_length = (m->frame_length << 3) / spi->bits_per_word;
 
 	frame_length = clamp(frame_length, 0, QSPI_FRAME);
@@ -366,7 +444,6 @@ static int ti_qspi_start_transfer_one(struct spi_master *master,
 	qspi->cmd |= QSPI_WC_CMD_INT_EN;
 
 	ti_qspi_write(qspi, QSPI_WC_INT_EN, QSPI_INTR_ENABLE_SET_REG);
-	ti_qspi_write(qspi, qspi->dc, QSPI_SPI_DC_REG);
 
 	mutex_lock(&qspi->list_lock);
 
@@ -397,13 +474,12 @@ static irqreturn_t ti_qspi_isr(int irq, void *dev_id)
 {
 	struct ti_qspi *qspi = dev_id;
 	u16 int_stat;
+	u32 stat;
 
 	irqreturn_t ret = IRQ_HANDLED;
 
-	spin_lock(&qspi->lock);
-
 	int_stat = ti_qspi_read(qspi, QSPI_INTR_STATUS_ENABLED_CLEAR);
-	qspi->stat = ti_qspi_read(qspi, QSPI_SPI_STATUS_REG);
+	stat = ti_qspi_read(qspi, QSPI_SPI_STATUS_REG);
 
 	if (!int_stat) {
 		dev_dbg(qspi->dev, "No IRQ triggered\n");
@@ -411,33 +487,12 @@ static irqreturn_t ti_qspi_isr(int irq, void *dev_id)
 		goto out;
 	}
 
-	ret = IRQ_WAKE_THREAD;
-
-	ti_qspi_write(qspi, QSPI_WC_INT_DISABLE, QSPI_INTR_ENABLE_CLEAR_REG);
 	ti_qspi_write(qspi, QSPI_WC_INT_DISABLE,
 				QSPI_INTR_STATUS_ENABLED_CLEAR);
-
-out:
-	spin_unlock(&qspi->lock);
-
-	return ret;
-}
-
-static irqreturn_t ti_qspi_threaded_isr(int this_irq, void *dev_id)
-{
-	struct ti_qspi *qspi = dev_id;
-	unsigned long flags;
-
-	spin_lock_irqsave(&qspi->lock, flags);
-
-	if (qspi->stat & WC)
+	if (stat & WC)
 		complete(&qspi->transfer_complete);
-
-	spin_unlock_irqrestore(&qspi->lock, flags);
-
-	ti_qspi_write(qspi, QSPI_WC_INT_EN, QSPI_INTR_ENABLE_SET_REG);
-
-	return IRQ_HANDLED;
+out:
+	return ret;
 }
 
 static int ti_qspi_runtime_resume(struct device *dev)
@@ -463,16 +518,29 @@ static int ti_qspi_probe(struct platform_device *pdev)
 {
 	struct  ti_qspi *qspi;
 	struct spi_master *master;
-	struct resource         *r;
+	struct resource         *r, *res_ctrl, *res_mmap;
 	struct device_node *np = pdev->dev.of_node;
 	u32 max_freq;
 	int ret = 0, num_cs, irq;
+	int gpio;
+	enum of_gpio_flags flags;
+
+	if (enable_qspi) {
+		gpio = of_get_named_gpio_flags(np, "qspi-gpio", 0, &flags);
+		if (gpio_is_valid(gpio)) {
+			gpio_request(gpio, "qspi");
+			gpio_direction_output(gpio, flags);
+		} else {
+			dev_err(&pdev->dev, "GPIO not available to select qspi");
+			return 0;
+		}
+	}
 
 	master = spi_alloc_master(&pdev->dev, sizeof(*qspi));
 	if (!master)
 		return -ENOMEM;
 
-	master->mode_bits = SPI_CPOL | SPI_CPHA;
+	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_RX_QUAD | SPI_RX_MMAP;
 
 	master->bus_num = -1;
 	master->flags = SPI_MASTER_HALF_DUPLEX;
@@ -481,6 +549,10 @@ static int ti_qspi_probe(struct platform_device *pdev)
 	master->transfer_one_message = ti_qspi_start_transfer_one;
 	master->dev.of_node = pdev->dev.of_node;
 	master->bits_per_word_mask = BIT(32 - 1) | BIT(16 - 1) | BIT(8 - 1);
+	master->configure_from_slave = ti_qspi_configure_from_slave;
+	master->get_buf = ti_qspi_get_mem_buf;
+	master->put_buf = ti_qspi_put_mem_buf;
+	master->mmap = true;
 
 	if (!of_property_read_u32(np, "num-cs", &num_cs))
 		master->num_chipselect = num_cs;
@@ -491,7 +563,16 @@ static int ti_qspi_probe(struct platform_device *pdev)
 	qspi->master = master;
 	qspi->dev = &pdev->dev;
 
-	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	r = platform_get_resource_byname(pdev, IORESOURCE_MEM, "qspi_base");
+	if (r == NULL) {
+		dev_err(&pdev->dev, "missing platform resources data\n");
+		return -ENODEV;
+	}
+
+	res_mmap = platform_get_resource_byname(pdev,
+			IORESOURCE_MEM, "qspi_mmap");
+	res_ctrl = platform_get_resource_byname(pdev,
+			IORESOURCE_MEM, "qspi_ctrlmod");
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
@@ -499,7 +580,6 @@ static int ti_qspi_probe(struct platform_device *pdev)
 		return irq;
 	}
 
-	spin_lock_init(&qspi->lock);
 	mutex_init(&qspi->list_lock);
 
 	qspi->base = devm_ioremap_resource(&pdev->dev, r);
@@ -508,8 +588,24 @@ static int ti_qspi_probe(struct platform_device *pdev)
 		goto free_master;
 	}
 
-	ret = devm_request_threaded_irq(&pdev->dev, irq, ti_qspi_isr,
-			ti_qspi_threaded_isr, 0,
+	if (res_ctrl) {
+		qspi->ctrl_mod = true;
+		qspi->ctrl_base = devm_ioremap_resource(&pdev->dev, res_ctrl);
+		if (IS_ERR(qspi->ctrl_base)) {
+			ret = PTR_ERR(qspi->ctrl_base);
+			goto free_master;
+		}
+	}
+
+	if (res_mmap) {
+		qspi->mmap_base = devm_ioremap_resource(&pdev->dev, res_mmap);
+		if (IS_ERR(qspi->mmap_base)) {
+			ret = PTR_ERR(qspi->mmap_base);
+			goto free_master;
+		}
+	}
+
+	ret = devm_request_irq(&pdev->dev, irq, ti_qspi_isr, 0,
 			dev_name(&pdev->dev), qspi);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Failed to register ISR for IRQ %d\n",
@@ -532,6 +628,9 @@ static int ti_qspi_probe(struct platform_device *pdev)
 	if (!of_property_read_u32(np, "spi-max-frequency", &max_freq))
 		qspi->spi_max_frequency = max_freq;
 
+	if (of_property_read_bool(np, "mmap_read"))
+		qspi->memory_mapped = true;
+
 	ret = spi_register_master(master);
 	if (ret)
 		goto free_master;
@@ -545,7 +644,26 @@ free_master:
 
 static int ti_qspi_remove(struct platform_device *pdev)
 {
-	struct	ti_qspi *qspi = platform_get_drvdata(pdev);
+	struct spi_master *master;
+	struct ti_qspi *qspi;
+	int ret;
+
+	master = platform_get_drvdata(pdev);
+	qspi = spi_master_get_devdata(master);
+
+	ret = pm_runtime_get_sync(qspi->dev);
+	if (ret < 0) {
+		dev_err(qspi->dev, "pm_runtime_get_sync() failed\n");
+		return ret;
+	}
+
+	ti_qspi_write(qspi, QSPI_WC_INT_DISABLE, QSPI_INTR_ENABLE_CLEAR_REG);
+
+	pm_runtime_put(qspi->dev);
+	pm_runtime_disable(&pdev->dev);
+
+	if (qspi->mmap_base)
+		iounmap(qspi->mmap_base);
 
 	spi_unregister_master(qspi->master);
 

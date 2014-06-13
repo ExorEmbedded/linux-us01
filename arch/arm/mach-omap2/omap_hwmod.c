@@ -141,6 +141,7 @@
 #include <linux/cpu.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/suspend.h>
 
 #include <asm/system_misc.h>
 
@@ -181,6 +182,9 @@
  * device drivers.  Until then, this should avoid huge blocks of cpu_is_*()
  * conditionals in this code.
  */
+
+#define SOC_HWMOD_CHECK_FOR_CONTEXT_FLAG	(0x1 << 0)
+
 struct omap_hwmod_soc_ops {
 	void (*enable_module)(struct omap_hwmod *oh);
 	int (*disable_module)(struct omap_hwmod *oh);
@@ -194,6 +198,7 @@ struct omap_hwmod_soc_ops {
 	int (*init_clkdm)(struct omap_hwmod *oh);
 	void (*update_context_lost)(struct omap_hwmod *oh);
 	int (*get_context_lost)(struct omap_hwmod *oh);
+	u8 flags;
 };
 
 /* soc_ops: adapts the omap_hwmod code to the currently-booted SoC */
@@ -207,6 +212,9 @@ static struct omap_hwmod *mpu_oh;
 
 /* io_chain_lock: used to serialize reconfigurations of the I/O chain */
 static DEFINE_SPINLOCK(io_chain_lock);
+
+/* _oh_force_mstandby_repeated_list for tracking nonstandard mstandby hwmods */
+static LIST_HEAD(_oh_force_mstandby_repeated_list);
 
 /*
  * linkspace: ptr to a buffer that struct omap_hwmod_link records are
@@ -686,6 +694,8 @@ static struct clockdomain *_get_clkdm(struct omap_hwmod *oh)
 	if (oh->clkdm) {
 		return oh->clkdm;
 	} else if (oh->_clk) {
+		if (__clk_get_flags(oh->_clk) & CLK_IS_BASIC)
+			return NULL;
 		clk = to_clk_hw_omap(__clk_get_hw(oh->_clk));
 		return  clk->clkdm;
 	}
@@ -758,14 +768,18 @@ static int _del_initiator_dep(struct omap_hwmod *oh, struct omap_hwmod *init_oh)
  * functional clock pointer) if a main_clk is present.  Returns 0 on
  * success or -EINVAL on error.
  */
-static int _init_main_clk(struct omap_hwmod *oh)
+static int _init_main_clk(struct omap_hwmod *oh, struct device_node *np)
 {
 	int ret = 0;
 
-	if (!oh->main_clk)
+	if (!oh->main_clk && !of_get_property(np, "clocks", NULL))
 		return 0;
 
-	oh->_clk = clk_get(NULL, oh->main_clk);
+	if (oh->main_clk)
+		oh->_clk = clk_get(NULL, oh->main_clk);
+	else
+		oh->_clk = of_clk_get_by_name(np, "fck");
+
 	if (IS_ERR(oh->_clk)) {
 		pr_warning("omap_hwmod: %s: cannot clk_get main_clk %s\n",
 			   oh->name, oh->main_clk);
@@ -831,6 +845,63 @@ static int _init_interface_clks(struct omap_hwmod *oh)
 	return ret;
 }
 
+static const char **_parse_opt_clks_dt(struct omap_hwmod *oh,
+				       struct device_node *np,
+				       int *opt_clks_cnt)
+{
+	int i, clks_cnt;
+	const char *clk_name;
+	const char **opt_clk_names;
+
+	clks_cnt = of_property_count_strings(np, "clock-names");
+	if (!clks_cnt)
+		return NULL;
+
+	opt_clk_names = kzalloc(sizeof(char *)*clks_cnt, GFP_KERNEL);
+	if (!opt_clk_names)
+		return NULL;
+
+	for (i = 0; i < clks_cnt; i++) {
+		of_property_read_string_index(np, "clock-names", i, &clk_name);
+		if (!strcmp(clk_name, "fck"))
+			continue;
+		opt_clk_names[(*opt_clks_cnt)++] = clk_name;
+	}
+	return opt_clk_names;
+}
+
+static int _init_opt_clks_dt(struct omap_hwmod *oh, struct device_node *np)
+{
+	struct clk *c;
+	int i, opt_clks_cnt = 0;
+	int ret = 0;
+	const char **opt_clk_names;
+
+	opt_clk_names = _parse_opt_clks_dt(oh, np, &opt_clks_cnt);
+	if (!opt_clk_names)
+		return -EINVAL;
+
+	oh->opt_clks = kzalloc(sizeof(struct omap_hwmod_opt_clk *)
+			       * opt_clks_cnt, GFP_KERNEL);
+	if (!oh->opt_clks)
+		return -ENOMEM;
+
+	oh->opt_clks_cnt = opt_clks_cnt;
+
+	for (i = 0; i < opt_clks_cnt; i++) {
+		c = of_clk_get_by_name(np, opt_clk_names[i]);
+		if (IS_ERR(c)) {
+			pr_warn("omap_hwmod: %s: cannot clk_get opt_clk %s\n",
+				oh->name, opt_clk_names[i]);
+			ret = -EINVAL;
+		}
+		oh->opt_clks[i]._clk = c;
+		oh->opt_clks[i].role = opt_clk_names[i];
+		clk_prepare(oh->opt_clks[i]._clk);
+	}
+	return ret;
+}
+
 /**
  * _init_opt_clk - get a struct clk * for the the hwmod's optional clocks
  * @oh: struct omap_hwmod *
@@ -838,12 +909,15 @@ static int _init_interface_clks(struct omap_hwmod *oh)
  * Called from _init_clocks().  Populates the @oh omap_hwmod_opt_clk
  * clock pointers.  Returns 0 on success or -EINVAL on error.
  */
-static int _init_opt_clks(struct omap_hwmod *oh)
+static int _init_opt_clks(struct omap_hwmod *oh, struct device_node *np)
 {
 	struct omap_hwmod_opt_clk *oc;
 	struct clk *c;
 	int i;
 	int ret = 0;
+
+	if (of_get_property(np, "clocks", NULL))
+		return _init_opt_clks_dt(oh, np);
 
 	for (i = oh->opt_clks_cnt, oc = oh->opt_clks; i > 0; i--, oc++) {
 		c = clk_get(NULL, oc->clk);
@@ -1574,7 +1648,7 @@ static int _init_clkdm(struct omap_hwmod *oh)
 	if (!oh->clkdm) {
 		pr_warning("omap_hwmod: %s: could not associate to clkdm %s\n",
 			oh->name, oh->clkdm_name);
-		return -EINVAL;
+		return 0;
 	}
 
 	pr_debug("omap_hwmod: %s: associated to clkdm %s\n",
@@ -1593,7 +1667,8 @@ static int _init_clkdm(struct omap_hwmod *oh)
  * Resolves all clock names embedded in the hwmod.  Returns 0 on
  * success, or a negative error code on failure.
  */
-static int _init_clocks(struct omap_hwmod *oh, void *data)
+static int _init_clocks(struct omap_hwmod *oh, void *data,
+			struct device_node *np)
 {
 	int ret = 0;
 
@@ -1605,9 +1680,9 @@ static int _init_clocks(struct omap_hwmod *oh, void *data)
 	if (soc_ops.init_clkdm)
 		ret |= soc_ops.init_clkdm(oh);
 
-	ret |= _init_main_clk(oh);
+	ret |= _init_main_clk(oh, np);
 	ret |= _init_interface_clks(oh);
-	ret |= _init_opt_clks(oh);
+	ret |= _init_opt_clks(oh, np);
 
 	if (!ret)
 		oh->_state = _HWMOD_STATE_CLKS_INITED;
@@ -1943,6 +2018,7 @@ static int _ocp_softreset(struct omap_hwmod *oh)
 		goto dis_opt_clks;
 
 	_write_sysconfig(v, oh);
+
 	ret = _clear_softreset(oh, &v);
 	if (ret)
 		goto dis_opt_clks;
@@ -2079,6 +2155,31 @@ static void _reconfigure_io_chain(void)
 static void _omap4_update_context_lost(struct omap_hwmod *oh)
 {
 	if (oh->prcm.omap4.flags & HWMOD_OMAP4_NO_CONTEXT_LOSS_BIT)
+		return;
+
+	if (!prm_was_any_context_lost_old(oh->clkdm->pwrdm.ptr->prcm_partition,
+					  oh->clkdm->pwrdm.ptr->prcm_offs,
+					  oh->prcm.omap4.context_offs))
+		return;
+
+	oh->prcm.omap4.context_lost_counter++;
+	prm_clear_context_loss_flags_old(oh->clkdm->pwrdm.ptr->prcm_partition,
+					 oh->clkdm->pwrdm.ptr->prcm_offs,
+					 oh->prcm.omap4.context_offs);
+}
+
+/**
+ * _am437x_update_context_lost - increment hwmod context loss counter if
+ * hwmod context was lost, and clear hardware context loss reg
+ * @oh: hwmod to check for context loss
+ *
+ * If the PRCM indicates that the hwmod @oh lost context, increment
+ * our in-memory context loss counter, and clear the RM_*_CONTEXT
+ * bits. No return value.
+ */
+static void _am437x_update_context_lost(struct omap_hwmod *oh)
+{
+	if (!(oh->prcm.omap4.flags & HWMOD_AM437X_HAS_CONTEXT_LOSS_BIT))
 		return;
 
 	if (!prm_was_any_context_lost_old(oh->clkdm->pwrdm.ptr->prcm_partition,
@@ -2401,11 +2502,11 @@ static struct device_node *of_dev_hwmod_lookup(struct device_node *np,
  * Returns 0 on success, -EINVAL if an invalid hwmod is passed, and
  * -ENXIO on absent or invalid register target address space.
  */
-static int __init _init_mpu_rt_base(struct omap_hwmod *oh, void *data)
+static int __init _init_mpu_rt_base(struct omap_hwmod *oh, void *data,
+				     struct device_node *np)
 {
 	struct omap_hwmod_addr_space *mem;
 	void __iomem *va_start = NULL;
-	struct device_node *np;
 
 	if (!oh)
 		return -EINVAL;
@@ -2421,12 +2522,10 @@ static int __init _init_mpu_rt_base(struct omap_hwmod *oh, void *data)
 			 oh->name);
 
 		/* Extract the IO space from device tree blob */
-		if (!of_have_populated_dt())
+		if (!np)
 			return -ENXIO;
 
-		np = of_dev_hwmod_lookup(of_find_node_by_name(NULL, "ocp"), oh);
-		if (np)
-			va_start = of_iomap(np, oh->mpu_rt_idx);
+		va_start = of_iomap(np, oh->mpu_rt_idx);
 	} else {
 		va_start = ioremap(mem->pa_start, mem->pa_end - mem->pa_start);
 	}
@@ -2459,12 +2558,17 @@ static int __init _init_mpu_rt_base(struct omap_hwmod *oh, void *data)
 static int __init _init(struct omap_hwmod *oh, void *data)
 {
 	int r;
+	struct device_node *np = NULL;
 
 	if (oh->_state != _HWMOD_STATE_REGISTERED)
 		return 0;
 
+	/* If booting with DT, parse the DT node for IO space/clocks etc */
+	if (of_have_populated_dt())
+		np = of_dev_hwmod_lookup(of_find_node_by_name(NULL, "ocp"), oh);
+
 	if (oh->class->sysc) {
-		r = _init_mpu_rt_base(oh, NULL);
+		r = _init_mpu_rt_base(oh, NULL, np);
 		if (r < 0) {
 			WARN(1, "omap_hwmod: %s: doesn't have mpu register target base\n",
 			     oh->name);
@@ -2472,10 +2576,17 @@ static int __init _init(struct omap_hwmod *oh, void *data)
 		}
 	}
 
-	r = _init_clocks(oh, NULL);
+	r = _init_clocks(oh, NULL, np);
 	if (r < 0) {
 		WARN(1, "omap_hwmod: %s: couldn't init clocks\n", oh->name);
 		return -EINVAL;
+	}
+
+	if (np) {
+		if (of_find_property(np, "ti,no-reset", NULL))
+			oh->flags |= HWMOD_INIT_NO_RESET;
+		if (of_find_property(np, "ti,no-idle", NULL))
+			oh->flags |= HWMOD_INIT_NO_IDLE;
 	}
 
 	oh->_state = _HWMOD_STATE_INITIALIZED;
@@ -3876,6 +3987,36 @@ int omap_hwmod_disable_wakeup(struct omap_hwmod *oh)
 	return 0;
 }
 
+static int omap_hwmod_enable_force_mstandby_repeated(struct omap_hwmod *oh)
+{
+	struct omap_hwmod_list *oh_list_item = NULL;
+
+	oh_list_item = kzalloc(sizeof(*oh_list_item), GFP_KERNEL);
+	oh_list_item->oh = oh;
+	list_add(&oh_list_item->oh_list, &_oh_force_mstandby_repeated_list);
+
+	return 0;
+}
+
+static int _check_for_force_mstandby_repeated(struct omap_hwmod *oh, void *data)
+{
+	if (oh->flags & HWMOD_FORCE_MSTANDBY_REPEATED)
+		omap_hwmod_enable_force_mstandby_repeated(oh);
+
+	return 0;
+}
+
+int omap_hwmod_force_mstandby_repeated(void)
+{
+	omap_hwmod_for_each(_check_for_force_mstandby_repeated, NULL);
+	return 0;
+}
+
+struct list_head *omap_hwmod_force_mstandby_list_get(void)
+{
+	return &_oh_force_mstandby_repeated_list;
+}
+
 /**
  * omap_hwmod_assert_hardreset - assert the HW reset line of submodules
  * contained in the hwmod module.
@@ -4056,9 +4197,19 @@ int omap_hwmod_get_context_loss_count(struct omap_hwmod *oh)
 	struct powerdomain *pwrdm;
 	int ret = 0;
 
-	if (soc_ops.get_context_lost)
-		return soc_ops.get_context_lost(oh);
+	if (soc_ops.get_context_lost) {
+		/*
+		 * On SoCs like AM437x where we dont use hwmod to check context
+		 * loss on certain devices..
+		 */
+		if ((soc_ops.flags & SOC_HWMOD_CHECK_FOR_CONTEXT_FLAG) &&
+		    !(oh->prcm.omap4.flags & HWMOD_AM437X_HAS_CONTEXT_LOSS_BIT))
+			goto get_pwrdm_context_loss_count;
 
+		return soc_ops.get_context_lost(oh);
+	}
+
+get_pwrdm_context_loss_count:
 	pwrdm = omap_hwmod_get_pwrdm(oh);
 	if (pwrdm)
 		ret = pwrdm_get_context_loss_count(pwrdm);
@@ -4165,6 +4316,7 @@ void __init omap_hwmod_init(void)
 		soc_ops.assert_hardreset = _omap2_assert_hardreset;
 		soc_ops.deassert_hardreset = _omap2_deassert_hardreset;
 		soc_ops.is_hardreset_asserted = _omap2_is_hardreset_asserted;
+		soc_ops.init_clkdm = _init_clkdm;
 	} else if (cpu_is_omap44xx() || soc_is_omap54xx() || soc_is_dra7xx()) {
 		soc_ops.enable_module = _omap4_enable_module;
 		soc_ops.disable_module = _omap4_disable_module;
@@ -4175,6 +4327,17 @@ void __init omap_hwmod_init(void)
 		soc_ops.init_clkdm = _init_clkdm;
 		soc_ops.update_context_lost = _omap4_update_context_lost;
 		soc_ops.get_context_lost = _omap4_get_context_lost;
+	} else if (soc_is_am43xx()) {
+		soc_ops.enable_module = _omap4_enable_module;
+		soc_ops.disable_module = _omap4_disable_module;
+		soc_ops.wait_target_ready = _omap4_wait_target_ready;
+		soc_ops.assert_hardreset = _omap4_assert_hardreset;
+		soc_ops.deassert_hardreset = _omap4_deassert_hardreset;
+		soc_ops.is_hardreset_asserted = _omap4_is_hardreset_asserted;
+		soc_ops.init_clkdm = _init_clkdm;
+		soc_ops.update_context_lost = _am437x_update_context_lost;
+		soc_ops.get_context_lost = _omap4_get_context_lost;
+		soc_ops.flags = SOC_HWMOD_CHECK_FOR_CONTEXT_FLAG;
 	} else if (soc_is_am33xx()) {
 		soc_ops.enable_module = _am33xx_enable_module;
 		soc_ops.disable_module = _am33xx_disable_module;

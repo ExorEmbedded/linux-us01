@@ -274,7 +274,6 @@ struct hda_gen_spec {
 	void (*init_hook)(struct hda_codec *codec);
 	void (*automute_hook)(struct hda_codec *codec);
 	void (*cap_sync_hook)(struct hda_codec *codec,
-			      struct snd_kcontrol *kcontrol,
 			      struct snd_ctl_elem_value *ucontrol);
 
 	/* PCM hooks */

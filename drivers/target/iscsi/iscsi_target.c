@@ -785,7 +785,7 @@ static void iscsit_ack_from_expstatsn(struct iscsi_conn *conn, u32 exp_statsn)
 	spin_unlock_bh(&conn->cmd_lock);
 
 	list_for_each_entry_safe(cmd, cmd_p, &ack_list, i_conn_node) {
-		list_del_init(&cmd->i_conn_node);
+		list_del(&cmd->i_conn_node);
 		iscsit_free_cmd(cmd, false);
 	}
 }
@@ -2476,7 +2476,6 @@ static void iscsit_build_conn_drop_async_message(struct iscsi_conn *conn)
 {
 	struct iscsi_cmd *cmd;
 	struct iscsi_conn *conn_p;
-	bool found = false;
 
 	/*
 	 * Only send a Asynchronous Message on connections whos network
@@ -2485,12 +2484,11 @@ static void iscsit_build_conn_drop_async_message(struct iscsi_conn *conn)
 	list_for_each_entry(conn_p, &conn->sess->sess_conn_list, conn_list) {
 		if (conn_p->conn_state == TARG_CONN_STATE_LOGGED_IN) {
 			iscsit_inc_conn_usage_count(conn_p);
-			found = true;
 			break;
 		}
 	}
 
-	if (!found)
+	if (!conn_p)
 		return;
 
 	cmd = iscsit_allocate_cmd(conn_p, GFP_ATOMIC);
@@ -3706,7 +3704,7 @@ iscsit_immediate_queue(struct iscsi_conn *conn, struct iscsi_cmd *cmd, int state
 		break;
 	case ISTATE_REMOVE:
 		spin_lock_bh(&conn->cmd_lock);
-		list_del_init(&cmd->i_conn_node);
+		list_del(&cmd->i_conn_node);
 		spin_unlock_bh(&conn->cmd_lock);
 
 		iscsit_free_cmd(cmd, false);
@@ -4151,7 +4149,7 @@ static void iscsit_release_commands_from_conn(struct iscsi_conn *conn)
 	spin_lock_bh(&conn->cmd_lock);
 	list_for_each_entry_safe(cmd, cmd_tmp, &conn->conn_cmd_list, i_conn_node) {
 
-		list_del_init(&cmd->i_conn_node);
+		list_del(&cmd->i_conn_node);
 		spin_unlock_bh(&conn->cmd_lock);
 
 		iscsit_increment_maxcmdsn(cmd, sess);
@@ -4196,10 +4194,6 @@ int iscsit_close_connection(
 	iscsit_stop_timers_for_cmds(conn);
 	iscsit_stop_nopin_response_timer(conn);
 	iscsit_stop_nopin_timer(conn);
-
-	if (conn->conn_transport->iscsit_wait_conn)
-		conn->conn_transport->iscsit_wait_conn(conn);
-
 	iscsit_free_queue_reqs_for_conn(conn);
 
 	/*

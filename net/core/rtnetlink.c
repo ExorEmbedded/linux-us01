@@ -353,46 +353,15 @@ void __rtnl_link_unregister(struct rtnl_link_ops *ops)
 }
 EXPORT_SYMBOL_GPL(__rtnl_link_unregister);
 
-/* Return with the rtnl_lock held when there are no network
- * devices unregistering in any network namespace.
- */
-static void rtnl_lock_unregistering_all(void)
-{
-	struct net *net;
-	bool unregistering;
-	DEFINE_WAIT(wait);
-
-	for (;;) {
-		prepare_to_wait(&netdev_unregistering_wq, &wait,
-				TASK_UNINTERRUPTIBLE);
-		unregistering = false;
-		rtnl_lock();
-		for_each_net(net) {
-			if (net->dev_unreg_count > 0) {
-				unregistering = true;
-				break;
-			}
-		}
-		if (!unregistering)
-			break;
-		__rtnl_unlock();
-		schedule();
-	}
-	finish_wait(&netdev_unregistering_wq, &wait);
-}
-
 /**
  * rtnl_link_unregister - Unregister rtnl_link_ops from rtnetlink.
  * @ops: struct rtnl_link_ops * to unregister
  */
 void rtnl_link_unregister(struct rtnl_link_ops *ops)
 {
-	/* Close the race with cleanup_net() */
-	mutex_lock(&net_mutex);
-	rtnl_lock_unregistering_all();
+	rtnl_lock();
 	__rtnl_link_unregister(ops);
 	rtnl_unlock();
-	mutex_unlock(&net_mutex);
 }
 EXPORT_SYMBOL_GPL(rtnl_link_unregister);
 
@@ -745,8 +714,7 @@ static inline int rtnl_vfinfo_size(const struct net_device *dev,
 		return 0;
 }
 
-static size_t rtnl_port_size(const struct net_device *dev,
-			     u32 ext_filter_mask)
+static size_t rtnl_port_size(const struct net_device *dev)
 {
 	size_t port_size = nla_total_size(4)		/* PORT_VF */
 		+ nla_total_size(PORT_PROFILE_MAX)	/* PORT_PROFILE */
@@ -762,8 +730,7 @@ static size_t rtnl_port_size(const struct net_device *dev,
 	size_t port_self_size = nla_total_size(sizeof(struct nlattr))
 		+ port_size;
 
-	if (!dev->netdev_ops->ndo_get_vf_port || !dev->dev.parent ||
-	    !(ext_filter_mask & RTEXT_FILTER_VF))
+	if (!dev->netdev_ops->ndo_get_vf_port || !dev->dev.parent)
 		return 0;
 	if (dev_num_vf(dev->dev.parent))
 		return port_self_size + vf_ports_size +
@@ -798,7 +765,7 @@ static noinline size_t if_nlmsg_size(const struct net_device *dev,
 	       + nla_total_size(ext_filter_mask
 			        & RTEXT_FILTER_VF ? 4 : 0) /* IFLA_NUM_VF */
 	       + rtnl_vfinfo_size(dev, ext_filter_mask) /* IFLA_VFINFO_LIST */
-	       + rtnl_port_size(dev, ext_filter_mask) /* IFLA_VF_PORTS + IFLA_PORT_SELF */
+	       + rtnl_port_size(dev) /* IFLA_VF_PORTS + IFLA_PORT_SELF */
 	       + rtnl_link_get_size(dev) /* IFLA_LINKINFO */
 	       + rtnl_link_get_af_size(dev) /* IFLA_AF_SPEC */
 	       + nla_total_size(MAX_PHYS_PORT_ID_LEN); /* IFLA_PHYS_PORT_ID */
@@ -860,13 +827,11 @@ static int rtnl_port_self_fill(struct sk_buff *skb, struct net_device *dev)
 	return 0;
 }
 
-static int rtnl_port_fill(struct sk_buff *skb, struct net_device *dev,
-			  u32 ext_filter_mask)
+static int rtnl_port_fill(struct sk_buff *skb, struct net_device *dev)
 {
 	int err;
 
-	if (!dev->netdev_ops->ndo_get_vf_port || !dev->dev.parent ||
-	    !(ext_filter_mask & RTEXT_FILTER_VF))
+	if (!dev->netdev_ops->ndo_get_vf_port || !dev->dev.parent)
 		return 0;
 
 	err = rtnl_port_self_fill(skb, dev);
@@ -1051,7 +1016,7 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
 		nla_nest_end(skb, vfinfo);
 	}
 
-	if (rtnl_port_fill(skb, dev, ext_filter_mask))
+	if (rtnl_port_fill(skb, dev))
 		goto nla_put_failure;
 
 	if (dev->rtnl_link_ops) {
@@ -1105,7 +1070,6 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 	struct hlist_head *head;
 	struct nlattr *tb[IFLA_MAX+1];
 	u32 ext_filter_mask = 0;
-	int err;
 
 	s_h = cb->args[0];
 	s_idx = cb->args[1];
@@ -1126,17 +1090,11 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 		hlist_for_each_entry_rcu(dev, head, index_hlist) {
 			if (idx < s_idx)
 				goto cont;
-			err = rtnl_fill_ifinfo(skb, dev, RTM_NEWLINK,
-					       NETLINK_CB(cb->skb).portid,
-					       cb->nlh->nlmsg_seq, 0,
-					       NLM_F_MULTI,
-					       ext_filter_mask);
-			/* If we ran out of room on the first message,
-			 * we're in trouble
-			 */
-			WARN_ON((err == -EMSGSIZE) && (skb->len == 0));
-
-			if (err <= 0)
+			if (rtnl_fill_ifinfo(skb, dev, RTM_NEWLINK,
+					     NETLINK_CB(cb->skb).portid,
+					     cb->nlh->nlmsg_seq, 0,
+					     NLM_F_MULTI,
+					     ext_filter_mask) <= 0)
 				goto out;
 
 			nl_dump_check_consistent(cb, nlmsg_hdr(skb));
@@ -2056,13 +2014,12 @@ EXPORT_SYMBOL(rtmsg_ifinfo);
 static int nlmsg_populate_fdb_fill(struct sk_buff *skb,
 				   struct net_device *dev,
 				   u8 *addr, u32 pid, u32 seq,
-				   int type, unsigned int flags,
-				   int nlflags)
+				   int type, unsigned int flags)
 {
 	struct nlmsghdr *nlh;
 	struct ndmsg *ndm;
 
-	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*ndm), nlflags);
+	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*ndm), NLM_F_MULTI);
 	if (!nlh)
 		return -EMSGSIZE;
 
@@ -2100,7 +2057,7 @@ static void rtnl_fdb_notify(struct net_device *dev, u8 *addr, int type)
 	if (!skb)
 		goto errout;
 
-	err = nlmsg_populate_fdb_fill(skb, dev, addr, 0, 0, type, NTF_SELF, 0);
+	err = nlmsg_populate_fdb_fill(skb, dev, addr, 0, 0, type, NTF_SELF);
 	if (err < 0) {
 		kfree_skb(skb);
 		goto errout;
@@ -2325,8 +2282,7 @@ static int nlmsg_populate_fdb(struct sk_buff *skb,
 
 		err = nlmsg_populate_fdb_fill(skb, dev, ha->addr,
 					      portid, seq,
-					      RTM_NEWNEIGH, NTF_SELF,
-					      NLM_F_MULTI);
+					      RTM_NEWNEIGH, NTF_SELF);
 		if (err < 0)
 			return err;
 skip:

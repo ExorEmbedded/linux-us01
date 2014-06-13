@@ -64,6 +64,7 @@
 #define OMAP_TIMER_HAS_PWM				0x20000000
 #define OMAP_TIMER_NEEDS_RESET				0x10000000
 #define OMAP_TIMER_HAS_DSP_IRQ				0x08000000
+#define OMAP_TIMER_HAS_IPU_IRQ				0x04000000
 
 /*
  * timer errata flags
@@ -336,8 +337,11 @@ static inline void __omap_dm_timer_enable_posted(struct omap_dm_timer *timer)
 	if (timer->posted)
 		return;
 
-	if (timer->errata & OMAP_TIMER_ERRATA_I103_I767)
+	if (timer->errata & OMAP_TIMER_ERRATA_I103_I767) {
+		timer->posted = OMAP_TIMER_NONPOSTED;
+		__omap_dm_timer_write(timer, OMAP_TIMER_IF_CTRL_REG, 0, 0);
 		return;
+	}
 
 	__omap_dm_timer_write(timer, OMAP_TIMER_IF_CTRL_REG,
 			      OMAP_TIMER_CTRL_POSTED, 0);

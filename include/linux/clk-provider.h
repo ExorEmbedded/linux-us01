@@ -241,6 +241,8 @@ struct clk *clk_register_gate(struct device *dev, const char *name,
 		void __iomem *reg, u8 bit_idx,
 		u8 clk_gate_flags, spinlock_t *lock);
 
+void of_gate_clk_setup(struct device_node *node);
+
 struct clk_div_table {
 	unsigned int	val;
 	unsigned int	div;
@@ -280,7 +282,7 @@ struct clk_divider {
 	struct clk_hw	hw;
 	void __iomem	*reg;
 	u8		shift;
-	u8		width;
+	u32		mask;
 	u8		flags;
 	const struct clk_div_table	*table;
 	spinlock_t	*lock;
@@ -301,6 +303,8 @@ struct clk *clk_register_divider_table(struct device *dev, const char *name,
 		void __iomem *reg, u8 shift, u8 width,
 		u8 clk_divider_flags, const struct clk_div_table *table,
 		spinlock_t *lock);
+
+void of_divider_clk_setup(struct device_node *node);
 
 /**
  * struct clk_mux - multiplexer clock
@@ -351,7 +355,7 @@ struct clk *clk_register_mux_table(struct device *dev, const char *name,
 		void __iomem *reg, u8 shift, u32 mask,
 		u8 clk_mux_flags, u32 *table, spinlock_t *lock);
 
-void of_fixed_factor_clk_setup(struct device_node *node);
+void of_mux_clk_setup(struct device_node *node);
 
 /**
  * struct clk_fixed_factor - fixed multiplier and divider clock
@@ -372,9 +376,12 @@ struct clk_fixed_factor {
 };
 
 extern struct clk_ops clk_fixed_factor_ops;
+
 struct clk *clk_register_fixed_factor(struct device *dev, const char *name,
 		const char *parent_name, unsigned long flags,
 		unsigned int mult, unsigned int div);
+
+void of_fixed_factor_clk_setup(struct device_node *node);
 
 /***
  * struct clk_composite - aggregate clock of mux, divider and gate clocks
@@ -406,6 +413,31 @@ struct clk *clk_register_composite(struct device *dev, const char *name,
 		struct clk_hw *rate_hw, const struct clk_ops *rate_ops,
 		struct clk_hw *gate_hw, const struct clk_ops *gate_ops,
 		unsigned long flags);
+
+/***
+ * struct clk_gpio - gpio controlled clock
+ *
+ * @hw:		handle between common and hardware-specific interfaces
+ * @gpio:	gpio
+ * @active_low:	gpio polarity
+ *
+ * Clock with a gpio control for enabling and disabling the parent clock.
+ * Implements .enable, .disable and .is_enabled
+ */
+
+struct clk_gpio {
+	struct clk_hw	hw;
+	unsigned int	gpio;
+	bool		active_low;
+};
+
+extern const struct clk_ops clk_gpio_ops;
+
+struct clk *clk_register_gpio(struct device *dev, const char *name,
+		const char *parent_name, unsigned long flags,
+		unsigned int gpio, bool active_low);
+
+void of_gpio_clk_setup(struct device_node *node);
 
 /**
  * clk_register - allocate a new clock, register it and return an opaque cookie
@@ -472,6 +504,7 @@ void of_clk_del_provider(struct device_node *np);
 struct clk *of_clk_src_simple_get(struct of_phandle_args *clkspec,
 				  void *data);
 struct clk *of_clk_src_onecell_get(struct of_phandle_args *clkspec, void *data);
+int of_clk_get_parent_count(struct device_node *np);
 const char *of_clk_get_parent_name(struct device_node *np, int index);
 
 void of_clk_init(const struct of_device_id *matches);

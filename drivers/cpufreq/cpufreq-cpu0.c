@@ -21,6 +21,7 @@
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
+#include <linux/suspend.h>
 
 static unsigned int transition_latency;
 static unsigned int voltage_tolerance; /* in percentage */
@@ -29,6 +30,8 @@ static struct device *cpu_dev;
 static struct clk *cpu_clk;
 static struct regulator *cpu_reg;
 static struct cpufreq_frequency_table *freq_table;
+static DEFINE_MUTEX(cpu_lock);
+static bool is_suspended;
 
 static int cpu0_verify_speed(struct cpufreq_policy *policy)
 {
@@ -50,12 +53,19 @@ static int cpu0_set_target(struct cpufreq_policy *policy,
 	unsigned int index;
 	int ret;
 
+	mutex_lock(&cpu_lock);
+
+	if (is_suspended) {
+		ret = -EBUSY;
+		goto out;
+	}
+
 	ret = cpufreq_frequency_table_target(policy, freq_table, target_freq,
 					     relation, &index);
 	if (ret) {
 		pr_err("failed to match target freqency %d: %d\n",
 		       target_freq, ret);
-		return ret;
+		goto out;
 	}
 
 	freq_Hz = clk_round_rate(cpu_clk, freq_table[index].frequency * 1000);
@@ -65,8 +75,10 @@ static int cpu0_set_target(struct cpufreq_policy *policy,
 	freqs.new = freq_Hz / 1000;
 	freqs.old = clk_get_rate(cpu_clk) / 1000;
 
-	if (freqs.old == freqs.new)
-		return 0;
+	if (freqs.old == freqs.new) {
+		ret = 0;
+		goto out;
+	}
 
 	cpufreq_notify_transition(policy, &freqs, CPUFREQ_PRECHANGE);
 
@@ -122,8 +134,31 @@ static int cpu0_set_target(struct cpufreq_policy *policy,
 post_notify:
 	cpufreq_notify_transition(policy, &freqs, CPUFREQ_POSTCHANGE);
 
+out:
+	mutex_unlock(&cpu_lock);
 	return ret;
 }
+
+static int cpu0_pm_notify(struct notifier_block *nb, unsigned long event,
+	void *dummy)
+{
+	mutex_lock(&cpu_lock);
+	switch (event) {
+	case PM_SUSPEND_PREPARE:
+		is_suspended = true;
+		break;
+	case PM_POST_SUSPEND:
+		is_suspended = false;
+		break;
+	}
+	mutex_unlock(&cpu_lock);
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block cpu_pm_notifier = {
+	.notifier_call = cpu0_pm_notify,
+};
 
 static int cpu0_cpufreq_init(struct cpufreq_policy *policy)
 {
@@ -147,11 +182,17 @@ static int cpu0_cpufreq_init(struct cpufreq_policy *policy)
 
 	cpufreq_frequency_table_get_attr(freq_table, policy->cpu);
 
+	if (!IS_ERR(cpu_reg))
+		register_pm_notifier(&cpu_pm_notifier);
+
 	return 0;
 }
 
 static int cpu0_cpufreq_exit(struct cpufreq_policy *policy)
 {
+	if (!IS_ERR(cpu_reg))
+		unregister_pm_notifier(&cpu_pm_notifier);
+
 	cpufreq_frequency_table_put_attr(policy->cpu);
 
 	return 0;
@@ -176,7 +217,8 @@ static struct cpufreq_driver cpu0_cpufreq_driver = {
 static int cpu0_cpufreq_probe(struct platform_device *pdev)
 {
 	struct device_node *np;
-	int ret;
+	int ret, i;
+	long boot_freq;
 
 	cpu_dev = get_cpu_device(0);
 	if (!cpu_dev) {
@@ -232,7 +274,6 @@ static int cpu0_cpufreq_probe(struct platform_device *pdev)
 	if (!IS_ERR(cpu_reg)) {
 		struct opp *opp;
 		unsigned long min_uV, max_uV;
-		int i;
 
 		/*
 		 * OPP is maintained in order of increasing frequency, and
@@ -252,6 +293,86 @@ static int cpu0_cpufreq_probe(struct platform_device *pdev)
 		ret = regulator_set_voltage_time(cpu_reg, min_uV, max_uV);
 		if (ret > 0)
 			transition_latency += ret * 1000;
+	}
+
+	boot_freq = clk_get_rate(cpu_clk);
+
+	/* See if we have a perfect match */
+	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++)
+		if (boot_freq == freq_table[i].frequency * 1000)
+			break;
+
+	/* If we have a bad bootloader config, try recovery */
+	if (freq_table[i].frequency == CPUFREQ_TABLE_END) {
+		struct opp *opp;
+		long new_freq = boot_freq, freq_exact;
+		unsigned long volt = 0, tol = 0;
+
+		ret = 0;
+		rcu_read_lock();
+
+		/* Try a conservative match */
+		opp = opp_find_freq_floor(cpu_dev, &new_freq);
+
+		/* If we did not get a floor match, try least available freq */
+		if (IS_ERR(opp)) {
+			new_freq = freq_table[0].frequency * 1000;
+			opp = opp_find_freq_exact(cpu_dev, new_freq, true);
+		}
+		if (IS_ERR(opp))
+			ret = -ERANGE;
+		if (!IS_ERR(opp) && !IS_ERR(cpu_reg)) {
+			volt = opp_get_voltage(opp);
+			tol = volt * voltage_tolerance / 100;
+		}
+		rcu_read_unlock();
+		if (ret) {
+			pr_err("Fail to find match boot clock rate: %lu\n",
+			       boot_freq);
+			goto out_free_table;
+		}
+
+		/* We dont expect to endup with same result */
+		WARN_ON(boot_freq == new_freq);
+
+		freq_exact = clk_round_rate(cpu_clk, new_freq);
+		if (freq_exact < 0) {
+			pr_err("Fail to find valid boot clock rate: %lu\n",
+			       freq_exact);
+			goto out_free_table;
+		}
+
+		/* Warn to get developer to fix bootloader */
+		pr_err("Bootloader freq %luHz no match to table, Using %luHz\n",
+		       boot_freq, new_freq);
+
+		/*
+		 * For voltage sequencing we *assume* that bootloader has at
+		 * least set the voltage appropriate for the boot_frequency
+		 */
+		if (!IS_ERR(cpu_reg) && boot_freq < new_freq) {
+			ret = regulator_set_voltage_tol(cpu_reg, volt, tol);
+			if (ret) {
+				pr_err("Fail to scale boot voltage up: %d\n",
+				       ret);
+				goto out_free_table;
+			}
+		}
+
+		ret = clk_set_rate(cpu_clk, freq_exact);
+		if (ret) {
+			pr_err("Fail to set boot clock rate: %d\n", ret);
+			goto out_free_table;
+		}
+
+		if (!IS_ERR(cpu_reg) && boot_freq > new_freq) {
+			ret = regulator_set_voltage_tol(cpu_reg, volt, tol);
+			if (ret) {
+				pr_err("Fail to scale boot voltage down: %d\n",
+				       ret);
+				goto out_free_table;
+			}
+		}
 	}
 
 	ret = cpufreq_register_driver(&cpu0_cpufreq_driver);

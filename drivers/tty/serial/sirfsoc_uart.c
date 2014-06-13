@@ -540,10 +540,8 @@ static void sirfsoc_rx_tmo_process_tl(unsigned long param)
 	wr_regl(port, ureg->sirfsoc_rx_dma_io_ctrl,
 			rd_regl(port, ureg->sirfsoc_rx_dma_io_ctrl) |
 			SIRFUART_IO_MODE);
-	spin_unlock_irqrestore(&sirfport->rx_lock, flags);
-	spin_lock(&port->lock);
 	sirfsoc_uart_pio_rx_chars(port, 4 - sirfport->rx_io_count);
-	spin_unlock(&port->lock);
+	spin_unlock_irqrestore(&sirfport->rx_lock, flags);
 	if (sirfport->rx_io_count == 4) {
 		spin_lock_irqsave(&sirfport->rx_lock, flags);
 		sirfport->rx_io_count = 0;

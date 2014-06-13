@@ -8,6 +8,11 @@
 obj-y				+= irqchip/
 obj-y				+= bus/
 
+obj-$(CONFIG_GENERIC_PHY)	+= phy/
+
+# reset controllers early, since gpu drivers might rely on them to initialize
+obj-$(CONFIG_RESET_CONTROLLER)	+= reset/
+
 # GPIO must come after pinctrl as gpios may need to mux pins etc
 obj-y				+= pinctrl/
 obj-y				+= gpio/
@@ -36,9 +41,6 @@ obj-$(CONFIG_XEN)		+= xen/
 
 # regulators early, since some subsystems rely on them to initialize
 obj-$(CONFIG_REGULATOR)		+= regulator/
-
-# reset controllers early, since gpu drivers might rely on them to initialize
-obj-$(CONFIG_RESET_CONTROLLER)	+= reset/
 
 # tty/ comes before char/ so that the VT console is the boot-time
 # default.

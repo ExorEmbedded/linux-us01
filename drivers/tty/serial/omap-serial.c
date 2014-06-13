@@ -240,8 +240,8 @@ serial_omap_baud_is_mode16(struct uart_port *port, unsigned int baud)
 {
 	unsigned int n13 = port->uartclk / (13 * baud);
 	unsigned int n16 = port->uartclk / (16 * baud);
-	int baudAbsDiff13 = baud - (port->uartclk / (13 * n13));
-	int baudAbsDiff16 = baud - (port->uartclk / (16 * n16));
+	int baudAbsDiff13 = n13 ? (baud - (port->uartclk / (13 * n13))) : INT_MAX;
+	int baudAbsDiff16 = n16 ? (baud - (port->uartclk / (16 * n16))) : INT_MAX;
 	if(baudAbsDiff13 < 0)
 		baudAbsDiff13 = -baudAbsDiff13;
 	if(baudAbsDiff16 < 0)
@@ -1446,12 +1446,18 @@ static int serial_omap_suspend(struct device *dev)
 	uart_suspend_port(&serial_omap_reg, &up->port);
 	flush_work(&up->qos_work);
 
+	/* Select sleep pin state */
+	pinctrl_pm_select_sleep_state(dev);
+
 	return 0;
 }
 
 static int serial_omap_resume(struct device *dev)
 {
 	struct uart_omap_port *up = dev_get_drvdata(dev);
+
+	/* Select default pin state */
+	pinctrl_pm_select_default_state(dev);
 
 	uart_resume_port(&serial_omap_reg, &up->port);
 

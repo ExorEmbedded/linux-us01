@@ -29,6 +29,7 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/omapfb.h>
+#include <linux/suspend.h>
 
 #include <video/omapdss.h>
 #include <video/omapvrfb.h>
@@ -1383,18 +1384,36 @@ static int omapfb_alloc_fbmem(struct fb_info *fbi, unsigned long size,
 	rg->type = 0;
 	rg->alloc = false;
 	rg->map = false;
+	rg->noclear = 0;
 
 	size = PAGE_ALIGN(size);
 
-	dma_set_attr(DMA_ATTR_WRITE_COMBINE, &attrs);
+	if (paddr) {
+		DBG("reserving %#lx bytes at %#lx\n", size, paddr);
 
-	if (ofbi->rotation_type == OMAP_DSS_ROT_VRFB)
-		dma_set_attr(DMA_ATTR_NO_KERNEL_MAPPING, &attrs);
+		token = dma_mark_declared_memory_occupied(fbdev->dev,
+			paddr, size);
 
-	DBG("allocating %lu bytes for fb %d\n", size, ofbi->id);
+		if (IS_ERR(token)) {
+			dev_err(fbdev->dev,
+				"dma_mark_declared_memory_occupied failed: %ld\n",
+				PTR_ERR(token));
+			return PTR_ERR(token);
+		}
 
-	token = dma_alloc_attrs(fbdev->dev, size, &dma_handle,
-			GFP_KERNEL, &attrs);
+		dma_handle = paddr;
+		rg->noclear = 1;
+	} else {
+		dma_set_attr(DMA_ATTR_WRITE_COMBINE, &attrs);
+
+		if (ofbi->rotation_type == OMAP_DSS_ROT_VRFB)
+			dma_set_attr(DMA_ATTR_NO_KERNEL_MAPPING, &attrs);
+
+		DBG("allocating %lu bytes for fb %d\n", size, ofbi->id);
+
+		token = dma_alloc_attrs(fbdev->dev, size, &dma_handle,
+				GFP_KERNEL, &attrs);
+	}
 
 	if (token == NULL) {
 		dev_err(fbdev->dev, "failed to allocate framebuffer\n");
@@ -1512,9 +1531,6 @@ static int omapfb_parse_vram_param(const char *param, int max_entries,
 				return -EINVAL;
 
 		}
-
-		WARN_ONCE(paddr,
-			"reserving memory at predefined address not supported\n");
 
 		paddrs[fbnum] = paddr;
 		sizes[fbnum] = size;
@@ -1948,6 +1964,9 @@ static int omapfb_create_framebuffers(struct omapfb2_device *fbdev)
 		struct omapfb_info *ofbi = FB2OFB(fbi);
 
 		if (ofbi->region->size == 0)
+			continue;
+
+		if (ofbi->region->noclear)
 			continue;
 
 		omapfb_clear_fb(fbi);
@@ -2407,6 +2426,55 @@ static int omapfb_init_connections(struct omapfb2_device *fbdev,
 	return 0;
 }
 
+static struct omap_dss_device *
+omapfb_find_default_display(struct omapfb2_device *fbdev)
+{
+	const char *def_name;
+	int i;
+
+	/*
+	 * Search with the display name from the user or the board file,
+	 * comparing to display names and aliases
+	 */
+
+	def_name = omapdss_get_default_display_name();
+
+	if (def_name) {
+		for (i = 0; i < fbdev->num_displays; ++i) {
+			struct omap_dss_device *dssdev;
+
+			dssdev = fbdev->displays[i].dssdev;
+
+			if (dssdev->name && strcmp(def_name, dssdev->name) == 0)
+				return dssdev;
+
+			if (strcmp(def_name, dssdev->alias) == 0)
+				return dssdev;
+		}
+
+		/* def_name given but not found */
+		return NULL;
+	}
+
+	/* then look for DT alias display0 */
+	for (i = 0; i < fbdev->num_displays; ++i) {
+		struct omap_dss_device *dssdev;
+		int id;
+
+		dssdev = fbdev->displays[i].dssdev;
+
+		if (dssdev->dev->of_node == NULL)
+			continue;
+
+		id = of_alias_get_id(dssdev->dev->of_node, "display");
+		if (id == 0)
+			return dssdev;
+	}
+
+	/* return the first display we have in the list */
+	return fbdev->displays[0].dssdev;
+}
+
 static int omapfb_probe(struct platform_device *pdev)
 {
 	struct omapfb2_device *fbdev = NULL;
@@ -2484,23 +2552,7 @@ static int omapfb_probe(struct platform_device *pdev)
 	for (i = 0; i < fbdev->num_managers; i++)
 		fbdev->managers[i] = omap_dss_get_overlay_manager(i);
 
-	def_display = NULL;
-
-	for (i = 0; i < fbdev->num_displays; ++i) {
-		struct omap_dss_device *dssdev;
-		const char *def_name;
-
-		def_name = omapdss_get_default_display_name();
-
-		dssdev = fbdev->displays[i].dssdev;
-
-		if (def_name == NULL ||
-			(dssdev->name && strcmp(def_name, dssdev->name) == 0)) {
-			def_display = dssdev;
-			break;
-		}
-	}
-
+	def_display = omapfb_find_default_display(fbdev);
 	if (def_display == NULL) {
 		dev_err(fbdev->dev, "failed to find default display\n");
 		r = -EPROBE_DEFER;
@@ -2556,6 +2608,14 @@ static int omapfb_probe(struct platform_device *pdev)
 		dev_err(fbdev->dev, "failed to create sysfs entries\n");
 		goto cleanup;
 	}
+
+	/*
+	 * disable creation of new console during suspend.
+	 * this works around a problem where a ctrl-c is needed
+	 * to be entered on the VT to actually get the device
+	 * to continue into the suspend state.
+	 */
+	pm_set_vt_switch(0);
 
 	return 0;
 

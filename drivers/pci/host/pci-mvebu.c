@@ -56,6 +56,14 @@
 #define PCIE_DEBUG_CTRL         0x1a60
 #define  PCIE_DEBUG_SOFT_RESET		BIT(20)
 
+/*
+ * This product ID is registered by Marvell, and used when the Marvell
+ * SoC is not the root complex, but an endpoint on the PCIe bus. It is
+ * therefore safe to re-use this PCI ID for our emulated PCI-to-PCI
+ * bridge.
+ */
+#define MARVELL_EMULATED_PCI_PCI_BRIDGE_ID 0x7846
+
 /* PCI configuration space of a PCI-to-PCI bridge */
 struct mvebu_sw_pci_bridge {
 	u16 vendor;
@@ -349,8 +357,7 @@ static void mvebu_sw_pci_bridge_init(struct mvebu_pcie_port *port)
 
 	bridge->class = PCI_CLASS_BRIDGE_PCI;
 	bridge->vendor = PCI_VENDOR_ID_MARVELL;
-	bridge->device = readl(port->base + PCIE_DEV_ID_OFF) >> 16;
-	bridge->revision = readl(port->base + PCIE_DEV_REV_OFF) & 0xff;
+	bridge->device = MARVELL_EMULATED_PCI_PCI_BRIDGE_ID;
 	bridge->header_type = PCI_HEADER_TYPE_BRIDGE;
 	bridge->cache_line_size = 0x10;
 
@@ -749,7 +756,7 @@ static int mvebu_get_tgt_attr(struct device_node *np, int devfn,
 
 	for (i = 0; i < nranges; i++) {
 		u32 flags = of_read_number(range, 1);
-		u32 slot = of_read_number(range + 1, 1);
+		u32 slot = of_read_number(range, 2);
 		u64 cpuaddr = of_read_number(range + na, pna);
 		unsigned long rtype;
 
@@ -866,23 +873,11 @@ static int __init mvebu_pcie_probe(struct platform_device *pdev)
 			continue;
 		}
 
-		port->clk = of_clk_get_by_name(child, NULL);
-		if (IS_ERR(port->clk)) {
-			dev_err(&pdev->dev, "PCIe%d.%d: cannot get clock\n",
-			       port->port, port->lane);
-			continue;
-		}
-
-		ret = clk_prepare_enable(port->clk);
-		if (ret)
-			continue;
-
 		port->base = mvebu_pcie_map_registers(pdev, child, port);
 		if (IS_ERR(port->base)) {
 			dev_err(&pdev->dev, "PCIe%d.%d: cannot map registers\n",
 				port->port, port->lane);
 			port->base = NULL;
-			clk_disable_unprepare(port->clk);
 			continue;
 		}
 
@@ -898,9 +893,22 @@ static int __init mvebu_pcie_probe(struct platform_device *pdev)
 				 port->port, port->lane);
 		}
 
+		port->clk = of_clk_get_by_name(child, NULL);
+		if (IS_ERR(port->clk)) {
+			dev_err(&pdev->dev, "PCIe%d.%d: cannot get clock\n",
+			       port->port, port->lane);
+			iounmap(port->base);
+			port->haslink = 0;
+			continue;
+		}
+
 		port->dn = child;
+
+		clk_prepare_enable(port->clk);
 		spin_lock_init(&port->conf_lock);
+
 		mvebu_sw_pci_bridge_init(port);
+
 		i++;
 	}
 

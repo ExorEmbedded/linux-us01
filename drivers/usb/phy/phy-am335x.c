@@ -52,23 +52,33 @@ static int am335x_phy_probe(struct platform_device *pdev)
 		return am_phy->id;
 	}
 
-	ret = usb_phy_gen_create_phy(dev, &am_phy->usb_phy_gen,
-			USB_PHY_TYPE_USB2, 0, false, false);
+	platform_set_drvdata(pdev, am_phy);
+
+	ret = usb_phy_gen_create_phy(dev, &am_phy->usb_phy_gen, NULL);
 	if (ret)
 		return ret;
 
-	ret = usb_add_phy_dev(&am_phy->usb_phy_gen.phy);
-	if (ret)
-		goto err_add;
 	am_phy->usb_phy_gen.phy.init = am335x_init;
 	am_phy->usb_phy_gen.phy.shutdown = am335x_shutdown;
 
-	platform_set_drvdata(pdev, am_phy);
-	return 0;
+	ret = usb_add_phy_dev(&am_phy->usb_phy_gen.phy);
+	if (ret)
+		return ret;
+	device_init_wakeup(dev, true);
 
-err_add:
-	usb_phy_gen_cleanup_phy(&am_phy->usb_phy_gen);
-	return ret;
+	/*
+	 * If we leave PHY wakeup enabled then AM33XX wakes up
+	 * immediately from DS0. To avoid this we mark dev->power.can_wakeup
+	 * to false. The same is checked in suspend routine to decide
+	 * on whether to enable PHY wakeup or not.
+	 * PHY wakeup works fine in standby mode, there by allowing us to
+	 * handle remote wakeup, wakeup on disconnect and connect.
+	 */
+
+	device_set_wakeup_enable(dev, false);
+	phy_ctrl_power(am_phy->phy_ctrl, am_phy->id, false);
+
+	return 0;
 }
 
 static int am335x_phy_remove(struct platform_device *pdev)
@@ -78,6 +88,40 @@ static int am335x_phy_remove(struct platform_device *pdev)
 	usb_remove_phy(&am_phy->usb_phy_gen.phy);
 	return 0;
 }
+
+#ifdef CONFIG_PM_SLEEP
+static int am335x_phy_suspend(struct device *dev)
+{
+	struct platform_device	*pdev = to_platform_device(dev);
+	struct am335x_phy *am_phy = platform_get_drvdata(pdev);
+
+	/*
+	 * Enable phy wakeup only if dev->power.can_wakeup is true.
+	 * Make sure to enable wakeup to support remote wakeup	in
+	 * standby mode ( same is not supported in OFF(DS0) mode).
+	 * Enable it by doing
+	 * echo enabled > /sys/bus/platform/devices/<usb-phy-id>/power/wakeup
+	 */
+
+	if (device_may_wakeup(dev))
+		phy_ctrl_wkup(am_phy->phy_ctrl, am_phy->id, true);
+
+	return 0;
+}
+
+static int am335x_phy_resume(struct device *dev)
+{
+	struct platform_device	*pdev = to_platform_device(dev);
+	struct am335x_phy	*am_phy = platform_get_drvdata(pdev);
+
+	if (device_may_wakeup(dev))
+		phy_ctrl_wkup(am_phy->phy_ctrl, am_phy->id, false);
+
+	return 0;
+}
+#endif
+
+static SIMPLE_DEV_PM_OPS(am335x_pm_ops, am335x_phy_suspend, am335x_phy_resume);
 
 static const struct of_device_id am335x_phy_ids[] = {
 	{ .compatible = "ti,am335x-usb-phy" },
@@ -91,7 +135,8 @@ static struct platform_driver am335x_phy_driver = {
 	.driver         = {
 		.name   = "am335x-phy-driver",
 		.owner  = THIS_MODULE,
-		.of_match_table = of_match_ptr(am335x_phy_ids),
+		.pm = &am335x_pm_ops,
+		.of_match_table = am335x_phy_ids,
 	},
 };
 

@@ -32,6 +32,8 @@
 #include <asm/mach/map.h>
 
 #include "soc.h"
+#include "display.h"
+#include "common.h"
 
 #ifdef CONFIG_OMAP2_VRFB
 
@@ -64,7 +66,7 @@ static const struct resource omap3_vrfb_resources[] = {
 	DEFINE_RES_MEM_NAMED(0xfc000000u, 0x4000000, "vrfb-area-11"),
 };
 
-static int __init omap_init_vrfb(void)
+int __init omap_init_vrfb(void)
 {
 	struct platform_device *pdev;
 	const struct resource *res;
@@ -85,8 +87,8 @@ static int __init omap_init_vrfb(void)
 
 	return PTR_RET(pdev);
 }
-
-omap_arch_initcall(omap_init_vrfb);
+#else
+int __init omap_init_vrfb(void) { return 0; }
 #endif
 
 #if defined(CONFIG_FB_OMAP2) || defined(CONFIG_FB_OMAP2_MODULE)
@@ -105,11 +107,84 @@ static struct platform_device omap_fb_device = {
 	.num_resources = 0,
 };
 
-static int __init omap_init_fb(void)
+static phys_addr_t omapfb_mem_base __initdata;
+static phys_addr_t omapfb_mem_size __initdata;
+
+static int __init early_omapfb_vram(char *p)
 {
-	return platform_device_register(&omap_fb_device);
+	omapfb_mem_size = memparse(p, &p);
+
+	if (!omapfb_mem_size) {
+		pr_err("omapfb: bad size for 'omapfb_vram' param\n");
+		return 0;
+	}
+
+	if (*p == '@') {
+		omapfb_mem_base = memparse(p + 1, NULL);
+
+		if (!omapfb_mem_base) {
+			pr_err("omapfb: bad addr for 'omapfb_vram' param\n");
+			omapfb_mem_size = 0;
+			return 0;
+		}
+	}
+
+	return 0;
+}
+early_param("omapfb_vram", early_omapfb_vram);
+
+void __init omap_fb_reserve_memblock(void)
+{
+	int r;
+
+	if (!omapfb_mem_size)
+		return;
+
+	if (omapfb_mem_base) {
+		r = memblock_reserve(omapfb_mem_base, omapfb_mem_size);
+
+		if (r) {
+			pr_err("omapfb: memblock_reserve failed: %d\n", r);
+			return;
+		}
+	} else {
+		omapfb_mem_base = memblock_alloc(omapfb_mem_size, SZ_1M);
+
+		if (!omapfb_mem_base) {
+			pr_err("omapfb: memblock_alloc failed\n");
+			return;
+		}
+	}
+
+	memblock_free(omapfb_mem_base, omapfb_mem_size);
+	memblock_remove(omapfb_mem_base, omapfb_mem_size);
+
+	pr_info("omapfb: reserved %pa bytes at %pa\n",
+		&omapfb_mem_size, &omapfb_mem_base);
 }
 
-omap_arch_initcall(omap_init_fb);
+int __init omap_init_fb(void)
+{
+	int r;
 
+	r = platform_device_register(&omap_fb_device);
+
+	if (r)
+		return r;
+
+	if (!omapfb_mem_base)
+		return 0;
+
+	r = dma_declare_coherent_memory(&omap_fb_device.dev,
+					omapfb_mem_base, omapfb_mem_base,
+					omapfb_mem_size, DMA_MEMORY_MAP);
+	if (!(r & DMA_MEMORY_MAP))
+		pr_err("omapfb: dma_declare_coherent_memory failed\n");
+
+	return 0;
+}
+
+#else
+void __init omap_fb_reserve_memblock(void) { }
+int __init omap_init_fb(void) { return 0; }
 #endif

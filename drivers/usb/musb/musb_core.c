@@ -94,6 +94,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/init.h>
+#include <linux/idr.h>
 #include <linux/list.h>
 #include <linux/kobject.h>
 #include <linux/prefetch.h>
@@ -120,7 +121,7 @@ MODULE_DESCRIPTION(DRIVER_INFO);
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:" MUSB_DRIVER_NAME);
-
+static DEFINE_IDA(musb_ida);
 
 /*-------------------------------------------------------------------------*/
 
@@ -130,6 +131,35 @@ static inline struct musb *dev_to_musb(struct device *dev)
 }
 
 /*-------------------------------------------------------------------------*/
+
+int musb_get_id(struct device *dev, gfp_t gfp_mask)
+{
+	int ret;
+	int id;
+
+	ret = ida_pre_get(&musb_ida, gfp_mask);
+	if (!ret) {
+		dev_err(dev, "failed to reserve resource for id\n");
+		return -ENOMEM;
+	}
+
+	ret = ida_get_new(&musb_ida, &id);
+	if (ret < 0) {
+		dev_err(dev, "failed to allocate a new id\n");
+		return ret;
+		}
+
+	return id;
+}
+EXPORT_SYMBOL_GPL(musb_get_id);
+
+void musb_put_id(struct device *dev, int id)
+{
+
+	dev_dbg(dev, "removing id %d\n", id);
+	ida_remove(&musb_ida, id);
+}
+EXPORT_SYMBOL_GPL(musb_put_id);
 
 #ifndef CONFIG_BLACKFIN
 static int musb_ulpi_read(struct usb_phy *phy, u32 offset)
@@ -439,6 +469,7 @@ void musb_hnp_stop(struct musb *musb)
 static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb,
 				u8 devctl)
 {
+	struct usb_otg *otg = musb->xceiv->otg;
 	irqreturn_t handled = IRQ_NONE;
 
 	dev_dbg(musb->controller, "<== DevCtl=%02x, int_usb=0x%x\n", devctl,
@@ -653,7 +684,7 @@ static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb,
 				break;
 		case OTG_STATE_B_PERIPHERAL:
 			musb_g_suspend(musb);
-			musb->is_active = musb->g.b_hnp_enable;
+			musb->is_active = otg->gadget->b_hnp_enable;
 			if (musb->is_active) {
 				musb->xceiv->state = OTG_STATE_B_WAIT_ACON;
 				dev_dbg(musb->controller, "HNP: Setting timer for b_ase0_brst\n");
@@ -669,7 +700,7 @@ static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb,
 			break;
 		case OTG_STATE_A_HOST:
 			musb->xceiv->state = OTG_STATE_A_SUSPEND;
-			musb->is_active = musb->hcd->self.b_hnp_enable;
+			musb->is_active = otg->host->b_hnp_enable;
 			break;
 		case OTG_STATE_B_HOST:
 			/* Transition to B_PERIPHERAL, see 6.8.2.6 p 44 */
@@ -1570,6 +1601,15 @@ irqreturn_t musb_interrupt(struct musb *musb)
 }
 EXPORT_SYMBOL_GPL(musb_interrupt);
 
+void musb_babble_reinit(struct musb *musb)
+{
+	musb_core_init(musb->config->multipoint
+			? MUSB_CONTROLLER_MHDRC
+			: MUSB_CONTROLLER_HDRC, musb);
+	musb_start(musb);
+}
+EXPORT_SYMBOL_GPL(musb_babble_reinit);
+
 #ifndef CONFIG_MUSB_PIO_ONLY
 static bool use_dma = 1;
 
@@ -1882,8 +1922,13 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 
 	pm_runtime_get_sync(musb->controller);
 
-	if (use_dma && dev->dma_mask)
+	if (use_dma && dev->dma_mask) {
 		musb->dma_controller = dma_controller_create(musb, musb->mregs);
+		if (IS_ERR(musb->dma_controller)) {
+			status = PTR_ERR(musb->dma_controller);
+			goto fail2_5;
+		}
+	}
 
 	/* be sure interrupts are disabled before connecting ISR */
 	musb_platform_disable(musb);
@@ -1934,17 +1979,26 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 	switch (musb->port_mode) {
 	case MUSB_PORT_MODE_HOST:
 		status = musb_host_setup(musb, plat->power);
+		if (status < 0)
+			goto fail3;
+		status = musb_platform_set_mode(musb, MUSB_HOST);
 		break;
 	case MUSB_PORT_MODE_GADGET:
 		status = musb_gadget_setup(musb);
+		if (status < 0)
+			goto fail3;
+		status = musb_platform_set_mode(musb, MUSB_PERIPHERAL);
 		break;
 	case MUSB_PORT_MODE_DUAL_ROLE:
 		status = musb_host_setup(musb, plat->power);
 		if (status < 0)
 			goto fail3;
 		status = musb_gadget_setup(musb);
-		if (status)
+		if (status) {
 			musb_host_cleanup(musb);
+			goto fail3;
+		}
+		status = musb_platform_set_mode(musb, MUSB_OTG);
 		break;
 	default:
 		dev_err(dev, "unsupported port mode %d\n", musb->port_mode);
@@ -1977,6 +2031,7 @@ fail3:
 	cancel_work_sync(&musb->irq_work);
 	if (musb->dma_controller)
 		dma_controller_destroy(musb->dma_controller);
+fail2_5:
 	pm_runtime_put_sync(musb->controller);
 
 fail2:
@@ -2037,6 +2092,7 @@ static int musb_remove(struct platform_device *pdev)
 		dma_controller_destroy(musb->dma_controller);
 
 	cancel_work_sync(&musb->irq_work);
+
 	musb_free(musb);
 	device_init_wakeup(dev, 0);
 	return 0;
@@ -2121,11 +2177,19 @@ static void musb_restore_context(struct musb *musb)
 	void __iomem *musb_base = musb->mregs;
 	void __iomem *ep_target_regs;
 	void __iomem *epio;
+	u8 power;
 
 	musb_writew(musb_base, MUSB_FRAME, musb->context.frame);
 	musb_writeb(musb_base, MUSB_TESTMODE, musb->context.testmode);
 	musb_write_ulpi_buscontrol(musb->mregs, musb->context.busctl);
-	musb_writeb(musb_base, MUSB_POWER, musb->context.power);
+
+	/* Don't affect SUSPENDM/RESUME bits in POWER reg */
+	power = musb_readb(musb_base, MUSB_POWER);
+	power &= MUSB_POWER_SUSPENDM | MUSB_POWER_RESUME;
+	musb->context.power &= ~(MUSB_POWER_SUSPENDM | MUSB_POWER_RESUME);
+	power |= musb->context.power;
+	musb_writeb(musb_base, MUSB_POWER, power);
+
 	musb_writew(musb_base, MUSB_INTRTXE, musb->intrtxe);
 	musb_writew(musb_base, MUSB_INTRRXE, musb->intrrxe);
 	musb_writeb(musb_base, MUSB_INTRUSBE, musb->context.intrusbe);
@@ -2209,16 +2273,41 @@ static int musb_suspend(struct device *dev)
 		 */
 	}
 
+	if (musb->suspended)
+		goto exit;
+
+	musb_save_context(musb);
+	musb->suspended = true;
+
+exit:
 	spin_unlock_irqrestore(&musb->lock, flags);
 	return 0;
 }
 
 static int musb_resume_noirq(struct device *dev)
 {
-	/* for static cmos like DaVinci, register values were preserved
+	struct musb	*musb = dev_to_musb(dev);
+
+	/*
+	 * For static cmos like DaVinci, register values were preserved
 	 * unless for some reason the whole soc powered down or the USB
 	 * module got reset through the PSC (vs just being disabled).
+	 *
+	 * For the DSPS glue layer though, a full register restore has to
+	 * be done. As it shouldn't harm other platforms, we do it
+	 * unconditionally.
 	 */
+
+	if (!musb->suspended)
+		return 0;
+
+	musb_restore_context(musb);
+	musb->suspended = false;
+
+	pm_runtime_disable(dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+
 	return 0;
 }
 
@@ -2226,7 +2315,12 @@ static int musb_runtime_suspend(struct device *dev)
 {
 	struct musb	*musb = dev_to_musb(dev);
 
+	dev_dbg(dev, "%s\n", __func__);
+	if (musb->suspended)
+		return 0;
+
 	musb_save_context(musb);
+	musb->suspended = true;
 
 	return 0;
 }
@@ -2234,20 +2328,13 @@ static int musb_runtime_suspend(struct device *dev)
 static int musb_runtime_resume(struct device *dev)
 {
 	struct musb	*musb = dev_to_musb(dev);
-	static int	first = 1;
 
-	/*
-	 * When pm_runtime_get_sync called for the first time in driver
-	 * init,  some of the structure is still not initialized which is
-	 * used in restore function. But clock needs to be
-	 * enabled before any register access, so
-	 * pm_runtime_get_sync has to be called.
-	 * Also context restore without save does not make
-	 * any sense
-	 */
-	if (!first)
-		musb_restore_context(musb);
-	first = 0;
+	dev_dbg(dev, "%s\n", __func__);
+	if (!musb->suspended)
+		return 0;
+
+	musb_restore_context(musb);
+	musb->suspended = false;
 
 	return 0;
 }
@@ -2273,7 +2360,6 @@ static struct platform_driver musb_driver = {
 	},
 	.probe		= musb_probe,
 	.remove		= musb_remove,
-	.shutdown	= musb_shutdown,
 };
 
 /*-------------------------------------------------------------------------*/

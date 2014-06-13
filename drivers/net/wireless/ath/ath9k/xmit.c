@@ -1457,15 +1457,13 @@ void ath_tx_aggr_sleep(struct ieee80211_sta *sta, struct ath_softc *sc,
 	for (tidno = 0, tid = &an->tid[tidno];
 	     tidno < IEEE80211_NUM_TIDS; tidno++, tid++) {
 
+		if (!tid->sched)
+			continue;
+
 		ac = tid->ac;
 		txq = ac->txq;
 
 		ath_txq_lock(sc, txq);
-
-		if (!tid->sched) {
-			ath_txq_unlock(sc, txq);
-			continue;
-		}
 
 		buffered = ath_tid_has_buffered(tid);
 
@@ -1718,7 +1716,7 @@ int ath_cabq_update(struct ath_softc *sc)
 	else if (sc->config.cabqReadytime > ATH9K_READY_TIME_HI_BOUND)
 		sc->config.cabqReadytime = ATH9K_READY_TIME_HI_BOUND;
 
-	qi.tqi_readyTime = (TU_TO_USEC(cur_conf->beacon_interval) *
+	qi.tqi_readyTime = (cur_conf->beacon_interval *
 			    sc->config.cabqReadytime) / 100;
 	ath_txq_update(sc, qnum, &qi);
 
@@ -2201,15 +2199,14 @@ int ath_tx_start(struct ieee80211_hw *hw, struct sk_buff *skb,
 		txq->stopped = true;
 	}
 
-	if (txctl->an)
-		tid = ath_get_skb_tid(sc, txctl->an, skb);
-
 	if (info->flags & IEEE80211_TX_CTL_PS_RESPONSE) {
 		ath_txq_unlock(sc, txq);
 		txq = sc->tx.uapsdq;
 		ath_txq_lock(sc, txq);
 	} else if (txctl->an &&
 		   ieee80211_is_data_present(hdr->frame_control)) {
+		tid = ath_get_skb_tid(sc, txctl->an, skb);
+
 		WARN_ON(tid->ac->txq != txctl->txq);
 
 		if (info->flags & IEEE80211_TX_CTL_CLEAR_PS_FILT)

@@ -16,9 +16,15 @@
 #include "powerdomain.h"
 
 #ifdef CONFIG_CPU_IDLE
+int __init am33xx_idle_init(bool ddr3);
 extern int __init omap3_idle_init(void);
 extern int __init omap4_idle_init(void);
 #else
+static inline int am33xx_idle_init(bool ddr3)
+{
+	return 0;
+}
+
 static inline int omap3_idle_init(void)
 {
 	return 0;
@@ -82,6 +88,16 @@ extern unsigned int omap3_do_wfi_sz;
 /* ... and its pointer from SRAM after copy */
 extern void (*omap3_do_wfi_sram)(void);
 
+/* am33xx_do_wfi function pointer and size, for copy to SRAM */
+extern void am33xx_do_wfi(void);
+extern unsigned int am33xx_do_wfi_sz;
+extern unsigned int am33xx_resume_offset;
+
+/* am43xx_do_wfi function pointer and size, for copy to SRAM */
+extern void am43xx_do_wfi(void);
+extern unsigned int am43xx_do_wfi_sz;
+extern unsigned int am43xx_resume_offset;
+
 /* save_secure_ram_context function pointer and size, for copy to SRAM */
 extern int save_secure_ram_context(u32 *addr);
 extern unsigned int save_secure_ram_context_sz;
@@ -103,7 +119,7 @@ static inline void enable_omap3630_toggle_l2_on_restore(void) { }
 
 #define PM_OMAP4_ROM_SMP_BOOT_ERRATUM_GICD	(1 << 0)
 
-#if defined(CONFIG_PM) && defined(CONFIG_ARCH_OMAP4)
+#if defined(CONFIG_ARCH_OMAP4)
 extern u16 pm44xx_errata;
 #define IS_PM44XX_ERRATUM(id)		(pm44xx_errata & (id))
 #else

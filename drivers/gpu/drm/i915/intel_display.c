@@ -7946,20 +7946,6 @@ static int intel_gen7_queue_flip(struct drm_device *dev,
 	if (ring->id == RCS)
 		len += 6;
 
-	/*
-	 * BSpec MI_DISPLAY_FLIP for IVB:
-	 * "The full packet must be contained within the same cache line."
-	 *
-	 * Currently the LRI+SRM+MI_DISPLAY_FLIP all fit within the same
-	 * cacheline, if we ever start emitting more commands before
-	 * the MI_DISPLAY_FLIP we may need to first emit everything else,
-	 * then do the cacheline alignment, and finally emit the
-	 * MI_DISPLAY_FLIP.
-	 */
-	ret = intel_ring_cacheline_align(ring);
-	if (ret)
-		goto err_unpin;
-
 	ret = intel_ring_begin(ring, len);
 	if (ret)
 		goto err_unpin;
@@ -10073,7 +10059,8 @@ static struct intel_quirk intel_quirks[] = {
 	/* ThinkPad T60 needs pipe A force quirk (bug #16494) */
 	{ 0x2782, 0x17aa, 0x201a, quirk_pipea_force },
 
-	/* 830 needs to leave pipe A & dpll A up */
+	/* 830/845 need to leave pipe A & dpll A up */
+	{ 0x2562, PCI_ANY_ID, PCI_ANY_ID, quirk_pipea_force },
 	{ 0x3577, PCI_ANY_ID, PCI_ANY_ID, quirk_pipea_force },
 
 	/* Lenovo U160 cannot use SSC on LVDS */

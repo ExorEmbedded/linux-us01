@@ -135,7 +135,7 @@ struct usb_hub *usb_hub_to_struct_hub(struct usb_device *hdev)
 	return usb_get_intfdata(hdev->actconfig->interface[0]);
 }
 
-static int usb_device_supports_lpm(struct usb_device *udev)
+int usb_device_supports_lpm(struct usb_device *udev)
 {
 	/* USB 2.1 (and greater) devices indicate LPM support through
 	 * their USB 2.0 Extended Capabilities BOS descriptor.
@@ -156,6 +156,11 @@ static int usb_device_supports_lpm(struct usb_device *udev)
 				"Power management will be impacted.\n");
 		return 0;
 	}
+
+	/* udev is root hub */
+	if (!udev->parent)
+		return 1;
+
 	if (udev->parent->lpm_capable)
 		return 1;
 
@@ -5308,11 +5313,10 @@ int usb_reset_device(struct usb_device *udev)
 				else if (cintf->condition ==
 						USB_INTERFACE_BOUND)
 					rebind = 1;
-				if (rebind)
-					cintf->needs_binding = 1;
 			}
+			if (ret == 0 && rebind)
+				usb_rebind_intf(cintf);
 		}
-		usb_unbind_and_rebind_marked_interfaces(udev);
 	}
 
 	usb_autosuspend_device(udev);

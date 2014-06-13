@@ -38,6 +38,7 @@ extern struct dev_pm_domain omap_device_pm_domain;
 
 /* omap_device.flags values */
 #define OMAP_DEVICE_SUSPENDED		BIT(0)
+#define OMAP_DEVICE_SUSPEND_FORCED	BIT(1)
 
 /**
  * struct omap_device - omap_device wrapper for platform_devices
@@ -87,6 +88,7 @@ struct device *omap_device_get_by_hwmod_name(const char *oh_name);
 
 /* OMAP PM interface */
 int omap_device_get_context_loss_count(struct platform_device *pdev);
+int omap_device_force_mstandby_repeated(void);
 
 /* Other */
 

@@ -100,12 +100,11 @@ enum dss_writeback_channel {
 	DSS_WB_LCD3_MGR =	7,
 };
 
-struct dss_clock_info {
-	/* rates that we get with dividers below */
-	unsigned long fck;
-
-	/* dividers */
-	u16 fck_div;
+enum dss_dpll {
+	DSS_DPLL_VIDEO1 = 0,
+	DSS_DPLL_VIDEO2,
+	DSS_DPLL_HDMI,
+	DSS_DPLL_NONE,
 };
 
 struct dispc_clock_info {
@@ -137,6 +136,12 @@ struct dsi_clock_info {
 	u16 regm_dsi;	/* OMAP3: REGM4
 			 * OMAP4: REGM5 */
 	u16 lp_clk_div;
+};
+
+struct dss_dpll_cinfo {
+	unsigned long fint, clkin, clkout, hsdiv_clk;
+
+	u16 regm, regn, regm_hsdiv;
 };
 
 struct reg_field {
@@ -223,9 +228,10 @@ int dss_init_platform_driver(void) __init;
 void dss_uninit_platform_driver(void);
 
 unsigned long dss_get_dispc_clk_rate(void);
-int dss_dpi_select_source(enum omap_channel channel);
+int dss_dpi_select_source(int module_id, enum omap_channel channel);
 void dss_select_hdmi_venc_clk_source(enum dss_hdmi_venc_clk_source_select);
 enum dss_hdmi_venc_clk_source_select dss_get_hdmi_venc_clk_source(void);
+void dss_use_dpll_lcd(enum omap_channel channel, bool use_dpll);
 const char *dss_get_generic_clk_source_name(enum omap_dss_clk_source clk_src);
 void dss_dump_clocks(struct seq_file *s);
 
@@ -250,12 +256,11 @@ enum omap_dss_clk_source dss_get_lcd_clk_source(enum omap_channel channel);
 void dss_set_venc_output(enum omap_dss_venc_type type);
 void dss_set_dac_pwrdn_bgz(bool enable);
 
-unsigned long dss_get_dpll4_rate(void);
-int dss_calc_clock_rates(struct dss_clock_info *cinfo);
-int dss_set_clock_div(struct dss_clock_info *cinfo);
+int dss_set_fck_rate(unsigned long rate);
 
-typedef bool (*dss_div_calc_func)(int fckd, unsigned long fck, void *data);
-bool dss_div_calc(unsigned long fck_min, dss_div_calc_func func, void *data);
+typedef bool (*dss_div_calc_func)(unsigned long fck, void *data);
+bool dss_div_calc(unsigned long pck, unsigned long fck_min,
+		dss_div_calc_func func, void *data);
 
 /* SDI */
 int sdi_init_platform_driver(void) __init;
@@ -372,6 +377,10 @@ static inline bool dsi_pll_calc(struct platform_device *dsidev,
 int dpi_init_platform_driver(void) __init;
 void dpi_uninit_platform_driver(void) __exit;
 
+/* DRA7x DPI */
+int dra7xx_dpi_init_platform_driver(void) __init;
+void dra7xx_dpi_uninit_platform_driver(void) __exit;
+
 /* DISPC */
 int dispc_init_platform_driver(void) __init;
 void dispc_uninit_platform_driver(void) __exit;
@@ -398,12 +407,6 @@ unsigned long dispc_fclk_rate(void);
 int dispc_calc_clock_rates(unsigned long dispc_fclk_rate,
 		struct dispc_clock_info *cinfo);
 
-
-void dispc_ovl_set_fifo_threshold(enum omap_plane plane, u32 low, u32 high);
-void dispc_ovl_compute_fifo_thresholds(enum omap_plane plane,
-		u32 *fifo_low, u32 *fifo_high, bool use_fifomerge,
-		bool manual_update);
-
 unsigned long dispc_mgr_lclk_rate(enum omap_channel channel);
 unsigned long dispc_mgr_pclk_rate(enum omap_channel channel);
 unsigned long dispc_core_clk_rate(void);
@@ -427,8 +430,11 @@ int venc_init_platform_driver(void) __init;
 void venc_uninit_platform_driver(void) __exit;
 
 /* HDMI */
-int hdmi_init_platform_driver(void) __init;
-void hdmi_uninit_platform_driver(void) __exit;
+int hdmi4_init_platform_driver(void) __init;
+void hdmi4_uninit_platform_driver(void) __exit;
+
+int hdmi5_init_platform_driver(void) __init;
+void hdmi5_uninit_platform_driver(void) __exit;
 
 /* RFBI */
 int rfbi_init_platform_driver(void) __init;
@@ -445,5 +451,28 @@ static inline void dss_collect_irq_stats(u32 irqstatus, unsigned *irq_arr)
 	}
 }
 #endif
+
+typedef bool (*dss_dpll_calc_func)(int regn, int regm, unsigned long fint,
+		unsigned long pll, void *data);
+typedef bool (*dss_dpll_hsdiv_calc_func)(int regm_dispc, unsigned long dispc,
+		void *data);
+bool dss_dpll_disabled(enum dss_dpll dpll);
+unsigned long dpll_get_clkin(enum dss_dpll dpll);
+bool dss_dpll_calc(enum dss_dpll dpll, unsigned long clkin,
+		unsigned long pll_min, unsigned long pll_max,
+		dss_dpll_calc_func func, void *data);
+bool dss_dpll_hsdiv_calc(enum dss_dpll dpll, unsigned long pll,
+		unsigned long out_min, dss_dpll_hsdiv_calc_func func,
+		void *data);
+int dss_dpll_set_clock_div(enum dss_dpll dpll, struct dss_dpll_cinfo *cinfo);
+
+void dss_dpll_enable_ctrl(enum dss_dpll dpll, bool enable);
+int dss_dpll_activate(enum dss_dpll dpll);
+void dss_dpll_set_control_mux(enum omap_channel channel, enum dss_dpll dpll);
+void dss_dpll_disable(enum dss_dpll dpll);
+int dss_dpll_init_regulator(enum dss_dpll dpll);
+int dss_dpll_configure(struct platform_device *pdev);
+int dss_dpll_configure_ctrl(void);
+void dss_dpll_unconfigure_ctrl(void);
 
 #endif

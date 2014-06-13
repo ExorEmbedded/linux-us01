@@ -505,7 +505,11 @@ static const struct musb_platform_ops davinci_ops = {
 	.set_vbus	= davinci_musb_set_vbus,
 };
 
-static u64 davinci_dmamask = DMA_BIT_MASK(32);
+static const struct platform_device_info davinci_dev_info = {
+	.name		= "musb-hdrc",
+	.id		= PLATFORM_DEVID_AUTO,
+	.dma_mask	= DMA_BIT_MASK(32),
+};
 
 static int davinci_probe(struct platform_device *pdev)
 {
@@ -513,6 +517,7 @@ static int davinci_probe(struct platform_device *pdev)
 	struct musb_hdrc_platform_data	*pdata = dev_get_platdata(&pdev->dev);
 	struct platform_device		*musb;
 	struct davinci_glue		*glue;
+	struct platform_device_info	pinfo;
 	struct clk			*clk;
 
 	int				ret = -ENOMEM;
@@ -521,12 +526,6 @@ static int davinci_probe(struct platform_device *pdev)
 	if (!glue) {
 		dev_err(&pdev->dev, "failed to allocate glue context\n");
 		goto err0;
-	}
-
-	musb = platform_device_alloc("musb-hdrc", PLATFORM_DEVID_AUTO);
-	if (!musb) {
-		dev_err(&pdev->dev, "failed to allocate musb device\n");
-		goto err1;
 	}
 
 	clk = clk_get(&pdev->dev, "usb");
@@ -542,12 +541,7 @@ static int davinci_probe(struct platform_device *pdev)
 		goto err4;
 	}
 
-	musb->dev.parent		= &pdev->dev;
-	musb->dev.dma_mask		= &davinci_dmamask;
-	musb->dev.coherent_dma_mask	= davinci_dmamask;
-
 	glue->dev			= &pdev->dev;
-	glue->musb			= musb;
 	glue->clk			= clk;
 
 	pdata->platform_ops		= &davinci_ops;
@@ -604,9 +598,6 @@ err4:
 	clk_put(clk);
 
 err3:
-	platform_device_put(musb);
-
-err1:
 	kfree(glue);
 
 err0:

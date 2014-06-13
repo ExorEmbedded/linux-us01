@@ -162,7 +162,7 @@ struct cache {
 	 */
 	dm_dblock_t discard_nr_blocks;
 	unsigned long *discard_bitset;
-	uint32_t discard_block_size;
+	uint32_t discard_block_size; /* a power of 2 times sectors per block */
 
 	/*
 	 * Rather than reconstructing the table line for the status we just
@@ -867,13 +867,12 @@ static void issue_copy_real(struct dm_cache_migration *mg)
 	int r;
 	struct dm_io_region o_region, c_region;
 	struct cache *cache = mg->cache;
-	sector_t cblock = from_cblock(mg->cblock);
 
 	o_region.bdev = cache->origin_dev->bdev;
 	o_region.count = cache->sectors_per_block;
 
 	c_region.bdev = cache->cache_dev->bdev;
-	c_region.sector = cblock * cache->sectors_per_block;
+	c_region.sector = from_cblock(mg->cblock) * cache->sectors_per_block;
 	c_region.count = cache->sectors_per_block;
 
 	if (mg->writeback || mg->demote) {
@@ -1908,6 +1907,35 @@ static int create_cache_policy(struct cache *cache, struct cache_args *ca,
 	return 0;
 }
 
+/*
+ * We want the discard block size to be a power of two, at least the size
+ * of the cache block size, and have no more than 2^14 discard blocks
+ * across the origin.
+ */
+#define MAX_DISCARD_BLOCKS (1 << 14)
+
+static bool too_many_discard_blocks(sector_t discard_block_size,
+				    sector_t origin_size)
+{
+	(void) sector_div(origin_size, discard_block_size);
+
+	return origin_size > MAX_DISCARD_BLOCKS;
+}
+
+static sector_t calculate_discard_block_size(sector_t cache_block_size,
+					     sector_t origin_size)
+{
+	sector_t discard_block_size;
+
+	discard_block_size = roundup_pow_of_two(cache_block_size);
+
+	if (origin_size)
+		while (too_many_discard_blocks(discard_block_size, origin_size))
+			discard_block_size *= 2;
+
+	return discard_block_size;
+}
+
 #define DEFAULT_MIGRATION_THRESHOLD 2048
 
 static int cache_create(struct cache_args *ca, struct cache **result)
@@ -2012,7 +2040,9 @@ static int cache_create(struct cache_args *ca, struct cache **result)
 	}
 	clear_bitset(cache->dirty_bitset, from_cblock(cache->cache_size));
 
-	cache->discard_block_size = cache->sectors_per_block;
+	cache->discard_block_size =
+		calculate_discard_block_size(cache->sectors_per_block,
+					     cache->origin_sectors);
 	cache->discard_nr_blocks = oblock_to_dblock(cache, cache->origin_blocks);
 	cache->discard_bitset = alloc_bitset(from_dblock(cache->discard_nr_blocks));
 	if (!cache->discard_bitset) {
@@ -2151,17 +2181,19 @@ static int cache_map(struct dm_target *ti, struct bio *bio)
 	bool discarded_block;
 	struct dm_bio_prison_cell *cell;
 	struct policy_result lookup_result;
-	struct per_bio_data *pb = init_per_bio_data(bio, pb_data_size);
+	struct per_bio_data *pb;
 
-	if (unlikely(from_oblock(block) >= from_oblock(cache->origin_blocks))) {
+	if (from_oblock(block) > from_oblock(cache->origin_blocks)) {
 		/*
 		 * This can only occur if the io goes to a partial block at
 		 * the end of the origin device.  We don't cache these.
 		 * Just remap to the origin and carry on.
 		 */
-		remap_to_origin(cache, bio);
+		remap_to_origin_clear_discard(cache, bio, block);
 		return DM_MAPIO_REMAPPED;
 	}
+
+	pb = init_per_bio_data(bio, pb_data_size);
 
 	if (bio->bi_rw & (REQ_FLUSH | REQ_FUA | REQ_DISCARD)) {
 		defer_bio(cache, bio);
@@ -2599,7 +2631,7 @@ static void set_discard_limits(struct cache *cache, struct queue_limits *limits)
 	/*
 	 * FIXME: these limits may be incompatible with the cache device
 	 */
-	limits->max_discard_sectors = cache->discard_block_size;
+	limits->max_discard_sectors = cache->discard_block_size * 1024;
 	limits->discard_granularity = cache->discard_block_size << SECTOR_SHIFT;
 }
 

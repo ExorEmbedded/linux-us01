@@ -258,6 +258,11 @@
 #define OMAP5XXX_CONTROL_STATUS                0x134
 #define OMAP5_DEVICETYPE_MASK          (0x7 << 6)
 
+/* DRA7XX DSP Reset Vector boot register */
+#define DRA7XX_CTRL_CORE_CONTROL_DSP1_RST_VECT	0x55C
+#define DRA7XX_CTRL_CORE_DSP_RST_VECT_MASK	(0x3FFFFF << 0)
+#define DRA7XX_CTRL_CORE_DSP_RST_VECT_SHIFT	10
+
 /*
  * REVISIT: This list of registers is not comprehensive - there are more
  * that should be added.
@@ -352,15 +357,14 @@
 /* AM33XX CONTROL_STATUS register */
 #define AM33XX_CONTROL_STATUS		0x040
 #define AM33XX_CONTROL_SEC_CLK_CTRL	0x1bc
-#define AM33XX_CONTROL_MAC_ID0_LOW	0x630
-#define AM33XX_CONTROL_MAC_ID0_HIGH	0x634
-#define AM33XX_CONTROL_MAC_ID1_LOW	0x638
-#define AM33XX_CONTROL_MAC_ID1_HIGH	0x63c
 
 /* AM33XX CONTROL_STATUS bitfields (partial) */
 #define AM33XX_CONTROL_STATUS_SYSBOOT1_SHIFT		22
 #define AM33XX_CONTROL_STATUS_SYSBOOT1_WIDTH		0x2
 #define AM33XX_CONTROL_STATUS_SYSBOOT1_MASK		(0x3 << 22)
+
+/* AM33XX CONTROL_SECURE_SDRAM_CONFIG register */
+#define AM33XX_CONTROL_SECURE_SDRAM_CONFIG	0x110
 
 /* AM33XX PWMSS Control register */
 #define AM33XX_PWMSS_TBCLK_CLKCTRL			0x664
@@ -429,6 +433,7 @@ extern void omap3_control_restore_context(void);
 extern void omap3_ctrl_write_boot_mode(u8 bootmode);
 extern void omap_ctrl_write_dsp_boot_addr(u32 bootaddr);
 extern void omap_ctrl_write_dsp_boot_mode(u8 bootmode);
+extern void dra7_ctrl_write_dsp_boot_addr(u32 bootaddr, u32 inst);
 extern void omap3630_ctrl_disable_rta(void);
 extern int omap3_ctrl_save_padconf(void);
 extern void omap2_set_globals_control(void __iomem *ctrl,

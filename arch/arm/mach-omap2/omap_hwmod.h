@@ -41,6 +41,7 @@ struct omap_device;
 extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type1;
 extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type2;
 extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type3;
+extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type4;
 
 /*
  * OCP SYSCONFIG bit shifts/masks TYPE1. These are for IPs compliant
@@ -80,6 +81,16 @@ extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type3;
 #define SYSC_TYPE3_SIDLEMODE_MASK	(0x3 << SYSC_TYPE3_SIDLEMODE_SHIFT)
 #define SYSC_TYPE3_MIDLEMODE_SHIFT	2
 #define SYSC_TYPE3_MIDLEMODE_MASK	(0x3 << SYSC_TYPE3_MIDLEMODE_SHIFT)
+
+/*
+ * OCP SYSCONFIG bit shifts/masks TYPE4.
+ */
+#define SYSC_TYPE4_SIDLEMODE_SHIFT	2
+#define SYSC_TYPE4_SIDLEMODE_MASK	(0x3 << SYSC_TYPE4_SIDLEMODE_SHIFT)
+#define SYSC_TYPE4_SOFTRESET_SHIFT	1
+#define SYSC_TYPE4_SOFTRESET_MASK	(1 << SYSC_TYPE4_SOFTRESET_SHIFT)
+#define SYSC_TYPE4_AUTOIDLE_SHIFT	0
+#define SYSC_TYPE4_AUTOIDLE_MASK	(1 << SYSC_TYPE4_AUTOIDLE_SHIFT)
 
 /* OCP SYSSTATUS bit shifts/masks */
 #define SYSS_RESETDONE_SHIFT		0
@@ -439,6 +450,7 @@ struct omap_hwmod_omap2_prcm {
  *     flag bit should be set in those cases
  */
 #define HWMOD_OMAP4_NO_CONTEXT_LOSS_BIT		(1 << 0)
+#define HWMOD_AM437X_HAS_CONTEXT_LOSS_BIT		(1 << 1)
 
 /**
  * struct omap_hwmod_omap4_prcm - OMAP4-specific PRCM data
@@ -528,6 +540,7 @@ struct omap_hwmod_omap4_prcm {
 #define HWMOD_BLOCK_WFI				(1 << 10)
 #define HWMOD_FORCE_MSTANDBY			(1 << 11)
 #define HWMOD_SWSUP_SIDLE_ACT			(1 << 12)
+#define HWMOD_FORCE_MSTANDBY_REPEATED		(1 << 13)
 
 /*
  * omap_hwmod._int_flags definitions
@@ -678,6 +691,11 @@ struct omap_hwmod {
 	u8				_postsetup_state;
 };
 
+struct omap_hwmod_list {
+	struct omap_hwmod *oh;
+	struct list_head oh_list;
+};
+
 struct omap_hwmod *omap_hwmod_lookup(const char *name);
 int omap_hwmod_for_each(int (*fn)(struct omap_hwmod *oh, void *data),
 			void *data);
@@ -730,6 +748,9 @@ int omap_hwmod_get_context_loss_count(struct omap_hwmod *oh);
 int omap_hwmod_no_setup_reset(struct omap_hwmod *oh);
 
 int omap_hwmod_pad_route_irq(struct omap_hwmod *oh, int pad_idx, int irq_idx);
+
+int omap_hwmod_force_mstandby_repeated(void);
+struct list_head *omap_hwmod_force_mstandby_list_get(void);
 
 extern void __init omap_hwmod_init(void);
 

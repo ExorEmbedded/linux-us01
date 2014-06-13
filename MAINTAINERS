@@ -3691,6 +3691,14 @@ S:	Maintained
 F:	include/asm-generic/
 F:	include/uapi/asm-generic/
 
+GENERIC PHY FRAMEWORK
+M:	Kishon Vijay Abraham I <kishon@ti.com>
+L:	linux-kernel@vger.kernel.org
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/kishon/linux-phy.git
+S:	Supported
+F:	drivers/phy/
+F:	include/linux/phy/
+
 GENERIC UIO DRIVER FOR PCI DEVICES
 M:	"Michael S. Tsirkin" <mst@redhat.com>
 L:	kvm@vger.kernel.org
@@ -6006,6 +6014,12 @@ S:	Maintained
 F:	arch/arm/boot/dts/*omap*
 F:	arch/arm/boot/dts/*am3*
 
+OMAP REMOTEPROC SUPPORT
+M:	Ohad Ben-Cohen <ohad@wizery.com>
+L:	linux-omap@vger.kernel.org
+S:	Maintained
+F:	arch/arm/*omap*/*remoteproc*
+
 OMAP CLOCK FRAMEWORK SUPPORT
 M:	Paul Walmsley <paul@pwsan.com>
 L:	linux-omap@vger.kernel.org
@@ -6385,6 +6399,7 @@ S:	Supported
 F:	Documentation/PCI/
 F:	drivers/pci/
 F:	include/linux/pci*
+F:	arch/x86/pci/
 
 PCI DRIVER FOR NVIDIA TEGRA
 M:	Thierry Reding <thierry.reding@gmail.com>
@@ -6392,6 +6407,12 @@ L:	linux-tegra@vger.kernel.org
 S:	Supported
 F:	Documentation/devicetree/bindings/pci/nvidia,tegra20-pcie.txt
 F:	drivers/pci/host/pci-tegra.c
+
+PCI DRIVER FOR SAMSUNG EXYNOS
+M:	Jingoo Han <jg1.han@samsung.com>
+L:	linux-pci@vger.kernel.org
+S:	Maintained
+F:	drivers/pci/host/pci-exynos.c
 
 PCMCIA SUBSYSTEM
 P:	Linux PCMCIA Team

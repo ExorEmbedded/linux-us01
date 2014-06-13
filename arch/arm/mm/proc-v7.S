@@ -136,7 +136,13 @@ ENTRY(cpu_v7_do_resume)
 #endif	/* CONFIG_MMU */
 	mrc	p15, 0, r4, c1, c0, 1	@ Read Auxiliary control register
 	teq	r4, r9			@ Is it already set?
+#ifdef CONFIG_ARM_ERRATA_799270
+	beq	1f
+	write_actlr_smp r9, r10
+#else
 	mcrne	p15, 0, r9, c1, c0, 1	@ No, so write it
+#endif
+1:
 	mcr	p15, 0, r10, c1, c0, 2	@ Co-processor access control
 	isb
 	dsb
@@ -192,10 +198,16 @@ __v7_ca15mp_setup:
 	ALT_SMP(mrc	p15, 0, r0, c1, c0, 1)
 	ALT_UP(mov	r0, #(1 << 6))		@ fake it for UP
 	tst	r0, #(1 << 6)			@ SMP/nAMP mode enabled?
+#ifdef ARM_ERRATA_799270
+	bne	2f
+	write_actlr_smp r0, r12
+#else
 	orreq	r0, r0, #(1 << 6)		@ Enable SMP/nAMP mode
+#endif
 	orreq	r0, r0, r10			@ Enable CPU-specific SMP bits
 	mcreq	p15, 0, r0, c1, c0, 1
 #endif
+2:
 	b	__v7_setup
 
 __v7_pj4b_setup:
@@ -344,6 +356,7 @@ __v7_setup:
 
 4:	mov	r10, #0
 	mcr	p15, 0, r10, c7, c5, 0		@ I+BTB cache invalidate
+	dsb
 #ifdef CONFIG_MMU
 	mcr	p15, 0, r10, c8, c7, 0		@ invalidate I + D TLBs
 	v7_ttb_setup r10, r4, r8, r5		@ TTBCR, TTBRx setup
@@ -352,7 +365,6 @@ __v7_setup:
 	mcr	p15, 0, r5, c10, c2, 0		@ write PRRR
 	mcr	p15, 0, r6, c10, c2, 1		@ write NMRR
 #endif
-	dsb					@ Complete invalidations
 #ifndef CONFIG_ARM_THUMBEE
 	mrc	p15, 0, r0, c0, c1, 0		@ read ID_PFR0 for ThumbEE
 	and	r0, r0, #(0xf << 12)		@ ThumbEE enabled field
@@ -381,7 +393,7 @@ __v7_setup:
 	mov	pc, lr				@ return to head.S:__ret
 ENDPROC(__v7_setup)
 
-	.align	2
+	.align	10
 __v7_setup_stack:
 	.space	4 * 11				@ 11 registers
 

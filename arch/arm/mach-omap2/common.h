@@ -60,10 +60,19 @@ static inline int omap3_pm_init(void)
 }
 #endif
 
-#if defined(CONFIG_PM) && defined(CONFIG_ARCH_OMAP4)
+#if defined(CONFIG_PM) && (defined(CONFIG_ARCH_OMAP4) || defined(CONFIG_SOC_OMAP5) || defined(CONFIG_SOC_DRA7XX))
 int omap4_pm_init(void);
 #else
 static inline int omap4_pm_init(void)
+{
+	return 0;
+}
+#endif
+
+#if defined(CONFIG_PM) && defined(CONFIG_SOC_AM33XX)
+int am33xx_pm_init(void);
+#else
+static inline int am33xx_pm_init(void)
 {
 	return 0;
 }
@@ -98,19 +107,26 @@ void am35xx_init_early(void);
 void ti81xx_init_early(void);
 void am33xx_init_early(void);
 void am43xx_init_early(void);
+void am43xx_init_late(void);
 void omap4430_init_early(void);
 void omap5_init_early(void);
 void omap3_init_late(void);	/* Do not use this one */
+void am33xx_init_late(void);
 void omap4430_init_late(void);
 void omap2420_init_late(void);
 void omap2430_init_late(void);
 void omap3430_init_late(void);
 void omap35xx_init_late(void);
 void omap3630_init_late(void);
+void am33xx_init_late(void);
+void am43xx_init_late(void);
 void am35xx_init_late(void);
 void ti81xx_init_late(void);
+void am33xx_init_late(void);
+void omap5_init_late(void);
 int omap2_common_pm_late_init(void);
 void dra7xx_init_early(void);
+void dra7xx_init_late(void);
 
 #ifdef CONFIG_SOC_BUS
 void omap_soc_device_init(void);
@@ -152,6 +168,14 @@ static inline void omap44xx_restart(enum reboot_mode mode, const char *cmd)
 }
 #endif
 
+#if defined(CONFIG_SUSPEND)
+void omap2_common_suspend_init(void);
+#else
+static inline void omap2_common_suspend_init(void)
+{
+}
+#endif
+
 /* This gets called from mach-omap2/io.c, do not call this */
 void __init omap2_set_globals_tap(u32 class, void __iomem *tap);
 
@@ -165,7 +189,6 @@ void __init ti81xx_map_io(void);
 
 /* omap_barriers_init() is OMAP4 only */
 void omap_barriers_init(void);
-
 /**
  * omap_test_timeout - busy-loop, testing a condition
  * @cond: condition to test until it evaluates to true
@@ -259,6 +282,8 @@ extern int omap4_enter_lowpower(unsigned int cpu, unsigned int power_state);
 extern int omap4_finish_suspend(unsigned long cpu_state);
 extern void omap4_cpu_resume(void);
 extern int omap4_hotplug_cpu(unsigned int cpu, unsigned int power_state);
+extern int omap5_finish_suspend(unsigned long cpu_state);
+extern void omap5_cpu_resume(void);
 #else
 static inline int omap4_enter_lowpower(unsigned int cpu,
 					unsigned int power_state)
@@ -286,6 +311,14 @@ static inline int omap4_finish_suspend(unsigned long cpu_state)
 static inline void omap4_cpu_resume(void)
 {}
 
+static inline int omap5_finish_suspend(unsigned long cpu_state)
+{
+	return 0;
+}
+
+static inline void omap5_cpu_resume(void)
+{}
+
 #endif
 
 struct omap_sdrc_params;
@@ -293,13 +326,25 @@ extern void omap_sdrc_init(struct omap_sdrc_params *sdrc_cs0,
 				      struct omap_sdrc_params *sdrc_cs1);
 struct omap2_hsmmc_info;
 extern int omap4_twl6030_hsmmc_init(struct omap2_hsmmc_info *controllers);
+
+extern void omap4_reserve(void);
+extern void omap5_reserve(void);
+extern void dra7_reserve(void);
 extern void omap_reserve(void);
+
+extern void am33xx_reserve(void);
+extern void am33xx_dram_sync_init(void);
+extern void __iomem *am33xx_dram_sync;
 
 struct omap_hwmod;
 extern int omap_dss_reset(struct omap_hwmod *);
 
+extern void omap_fb_reserve_memblock(void);
+
 /* SoC specific clock initializer */
 extern int (*omap_clk_init)(void);
+
+int __init omapdss_init_of(void);
 
 #endif /* __ASSEMBLER__ */
 #endif /* __ARCH_ARM_MACH_OMAP2PLUS_COMMON_H */

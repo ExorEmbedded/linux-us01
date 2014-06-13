@@ -514,13 +514,11 @@ int jbd2_journal_start_reserved(handle_t *handle, unsigned int type,
 	 * similarly constrained call sites
 	 */
 	ret = start_this_handle(journal, handle, GFP_NOFS);
-	if (ret < 0) {
+	if (ret < 0)
 		jbd2_journal_free_reserved(handle);
-		return ret;
-	}
 	handle->h_type = type;
 	handle->h_line_no = line_no;
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(jbd2_journal_start_reserved);
 

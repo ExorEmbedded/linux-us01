@@ -35,6 +35,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/of.h>
 #include <linux/notifier.h>
+#include <linux/suspend.h>
 
 #include "soc.h"
 #include "omap_device.h"
@@ -45,37 +46,32 @@
 static void _add_clkdev(struct omap_device *od, const char *clk_alias,
 		       const char *clk_name)
 {
+	int ret;
 	struct clk *r;
-	struct clk_lookup *l;
+	struct device *dev = &od->pdev->dev;
+	struct device_node *node = dev->of_node;
 
 	if (!clk_alias || !clk_name)
 		return;
 
-	dev_dbg(&od->pdev->dev, "Creating %s -> %s\n", clk_alias, clk_name);
+	dev_dbg(dev, "Creating %s -> %s\n", clk_alias, clk_name);
 
-	r = clk_get_sys(dev_name(&od->pdev->dev), clk_alias);
+	r = clk_get(dev, clk_alias);
 	if (!IS_ERR(r)) {
-		dev_warn(&od->pdev->dev,
-			 "alias %s already exists\n", clk_alias);
+		if (!node)
+			dev_warn(dev, "alias '%s' already exists\n", clk_alias);
 		clk_put(r);
 		return;
 	}
 
-	r = clk_get(NULL, clk_name);
-	if (IS_ERR(r)) {
-		dev_err(&od->pdev->dev,
-			"clk_get for %s failed\n", clk_name);
-		return;
-	}
+	if (node)
+		dev_err(dev, "FIXME: clock-name '%s' DOES NOT exist in dt!\n",
+			clk_alias);
 
-	l = clkdev_alloc(r, clk_alias, dev_name(&od->pdev->dev));
-	if (!l) {
-		dev_err(&od->pdev->dev,
-			"clkdev_alloc for %s failed\n", clk_alias);
-		return;
-	}
-
-	clkdev_add(l);
+	ret = clk_add_alias(clk_alias, dev_name(dev), (char *)clk_name, dev);
+	if (ret)
+		dev_err(dev, "Failed to alias %s to %s: %d\n", clk_alias,
+			clk_name, ret);
 }
 
 /**
@@ -621,7 +617,13 @@ static int _od_suspend_noirq(struct device *dev)
 
 	if (!ret && !pm_runtime_status_suspended(dev)) {
 		if (pm_generic_runtime_suspend(dev) == 0) {
-			pm_runtime_set_suspended(dev);
+			if (!pm_runtime_suspended(dev)) {
+				/* NOTE: *might* indicate driver race */
+				dev_dbg(dev, "%s: Force suspending\n",
+					__func__);
+				pm_runtime_set_suspended(dev);
+				od->flags |= OMAP_DEVICE_SUSPEND_FORCED;
+			}
 			omap_device_idle(pdev);
 			od->flags |= OMAP_DEVICE_SUSPENDED;
 		}
@@ -638,6 +640,12 @@ static int _od_resume_noirq(struct device *dev)
 	if (od->flags & OMAP_DEVICE_SUSPENDED) {
 		od->flags &= ~OMAP_DEVICE_SUSPENDED;
 		omap_device_enable(pdev);
+
+		if (od->flags & OMAP_DEVICE_SUSPEND_FORCED) {
+			pm_runtime_set_active(dev);
+			od->flags &= ~OMAP_DEVICE_SUSPEND_FORCED;
+		}
+
 		/*
 		 * XXX: we run before core runtime pm has resumed itself. At
 		 * this point in time, we just restore the runtime pm state and
@@ -647,6 +655,7 @@ static int _od_resume_noirq(struct device *dev)
 		 */
 		WARN(pm_runtime_set_active(dev),
 		     "Could not set %s runtime state active\n", dev_name(dev));
+
 		pm_generic_runtime_resume(dev);
 	}
 
@@ -748,6 +757,53 @@ int omap_device_idle(struct platform_device *pdev)
 
 	return ret;
 }
+
+/*
+ * There are some IPs that do not have MSTANDBY asserted by default
+ * which is necessary for PER domain transition. If the drivers
+ * are not compiled into the kernel HWMOD code will not change the
+ * state of the IPs if the IP was never enabled, so we keep track of
+ * them here to idle them with a pm_notifier.
+ */
+
+static int _omap_mstandby_pm_notifier(struct notifier_block *self,
+					unsigned long action, void *dev)
+{
+	struct omap_hwmod_list *oh_list_item = NULL;
+	struct platform_device *pdev;
+	struct omap_device *od;
+
+	switch (action) {
+	case PM_POST_SUSPEND:
+		list_for_each_entry(oh_list_item,
+			omap_hwmod_force_mstandby_list_get(), oh_list) {
+			pdev = to_platform_device(
+					omap_device_get_by_hwmod_name(
+						  oh_list_item->oh->name));
+
+			od = to_omap_device(pdev);
+			if (od && od->_driver_status !=
+					BUS_NOTIFY_BOUND_DRIVER) {
+				omap_hwmod_enable(oh_list_item->oh);
+				omap_hwmod_idle(oh_list_item->oh);
+			}
+		}
+	}
+
+	return NOTIFY_DONE;
+}
+
+struct notifier_block pm_nb = {
+	.notifier_call = _omap_mstandby_pm_notifier,
+};
+
+int omap_device_force_mstandby_repeated(void)
+{
+	omap_hwmod_force_mstandby_repeated();
+	register_pm_notifier(&pm_nb);
+	return 0;
+}
+
 
 /**
  * omap_device_assert_hardreset - set a device's hardreset line

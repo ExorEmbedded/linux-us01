@@ -564,8 +564,21 @@ int wiphy_register(struct wiphy *wiphy)
 		     rdev->wiphy.wowlan->pattern_min_len >
 				rdev->wiphy.wowlan->pattern_max_len)))
 		return -EINVAL;
-#endif
 
+#ifdef CONFIG_ANDROID
+	/* use wowlan by default */
+	if (rdev->wiphy.wowlan->flags & WIPHY_WOWLAN_ANY) {
+		/* TODO: free wowlan in case we fail later*/
+		struct cfg80211_wowlan *wowlan_cfg;
+
+		wowlan_cfg = kzalloc(sizeof(*wowlan_cfg), GFP_KERNEL);
+		if (!wowlan_cfg)
+			return -ENOMEM;
+		wowlan_cfg->any = true;
+		rdev->wiphy.wowlan_config = wowlan_cfg;
+	}
+#endif
+#endif
 	/* check and set up bitrates */
 	ieee80211_set_bitrate_flags(wiphy);
 
@@ -765,7 +778,8 @@ void cfg80211_leave(struct cfg80211_registered_device *rdev,
 		break;
 	case NL80211_IFTYPE_P2P_CLIENT:
 	case NL80211_IFTYPE_STATION:
-		__cfg80211_stop_sched_scan(rdev, false);
+		if (rdev->sched_scan_req && dev == rdev->sched_scan_req->dev)
+			__cfg80211_stop_sched_scan(rdev, false);
 
 		wdev_lock(wdev);
 #ifdef CONFIG_CFG80211_WEXT

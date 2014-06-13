@@ -68,9 +68,7 @@
 
 #include "rtmutex_common.h"
 
-#ifndef CONFIG_HAVE_FUTEX_CMPXCHG
 int __read_mostly futex_cmpxchg_enabled;
-#endif
 
 #define FUTEX_HASHBITS (CONFIG_BASE_SMALL ? 4 : 8)
 
@@ -253,9 +251,6 @@ get_futex_key(u32 __user *uaddr, int fshared, union futex_key *key, int rw)
 		return -EINVAL;
 	address -= key->both.offset;
 
-	if (unlikely(!access_ok(rw, uaddr, sizeof(u32))))
-		return -EFAULT;
-
 	/*
 	 * PROCESS_PRIVATE futexes are fast.
 	 * As the mm cannot disappear under us and the 'key' only needs
@@ -264,6 +259,8 @@ get_futex_key(u32 __user *uaddr, int fshared, union futex_key *key, int rw)
 	 *        but access_ok() should be faster than find_vma()
 	 */
 	if (!fshared) {
+		if (unlikely(!access_ok(VERIFY_WRITE, uaddr, sizeof(u32))))
+			return -EFAULT;
 		key->private.mm = mm;
 		key->private.address = address;
 		get_futex_key_refs(key);
@@ -2733,10 +2730,10 @@ SYSCALL_DEFINE6(futex, u32 __user *, uaddr, int, op, u32, val,
 	return do_futex(uaddr, op, val, tp, uaddr2, val2, val3);
 }
 
-static void __init futex_detect_cmpxchg(void)
+static int __init futex_init(void)
 {
-#ifndef CONFIG_HAVE_FUTEX_CMPXCHG
 	u32 curval;
+	int i;
 
 	/*
 	 * This will fail and we want it. Some arch implementations do
@@ -2750,14 +2747,6 @@ static void __init futex_detect_cmpxchg(void)
 	 */
 	if (cmpxchg_futex_value_locked(&curval, NULL, 0, 0) == -EFAULT)
 		futex_cmpxchg_enabled = 1;
-#endif
-}
-
-static int __init futex_init(void)
-{
-	int i;
-
-	futex_detect_cmpxchg();
 
 	for (i = 0; i < ARRAY_SIZE(futex_queues); i++) {
 		plist_head_init(&futex_queues[i].chain);

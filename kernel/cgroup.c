@@ -1612,10 +1612,10 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		mutex_lock(&cgroup_mutex);
 		mutex_lock(&cgroup_root_mutex);
 
-		ret = idr_alloc(&root->cgroup_idr, root_cgrp, 0, 1, GFP_KERNEL);
-		if (ret < 0)
+		root_cgrp->id = idr_alloc(&root->cgroup_idr, root_cgrp,
+					   0, 1, GFP_KERNEL);
+		if (root_cgrp->id < 0)
 			goto unlock_drop;
-		root_cgrp->id = ret;
 
 		/* Check for name clashes with existing mounts */
 		ret = -EBUSY;
@@ -2877,7 +2877,10 @@ static int cgroup_cfts_commit(struct cftype *cfts, bool is_add)
 	 */
 	update_before = cgroup_serial_nr_next;
 
+	mutex_unlock(&cgroup_mutex);
+
 	/* add/rm files for all cgroups created before */
+	rcu_read_lock();
 	css_for_each_descendant_pre(css, cgroup_css(root, ss)) {
 		struct cgroup *cgrp = css->cgroup;
 
@@ -2886,19 +2889,23 @@ static int cgroup_cfts_commit(struct cftype *cfts, bool is_add)
 
 		inode = cgrp->dentry->d_inode;
 		dget(cgrp->dentry);
+		rcu_read_unlock();
+
 		dput(prev);
 		prev = cgrp->dentry;
 
-		mutex_unlock(&cgroup_mutex);
 		mutex_lock(&inode->i_mutex);
 		mutex_lock(&cgroup_mutex);
 		if (cgrp->serial_nr < update_before && !cgroup_is_dead(cgrp))
 			ret = cgroup_addrm_files(cgrp, cfts, is_add);
+		mutex_unlock(&cgroup_mutex);
 		mutex_unlock(&inode->i_mutex);
+
+		rcu_read_lock();
 		if (ret)
 			break;
 	}
-	mutex_unlock(&cgroup_mutex);
+	rcu_read_unlock();
 	dput(prev);
 	deactivate_super(sb);
 	return ret;
@@ -3017,14 +3024,9 @@ static void cgroup_enable_task_cg_lists(void)
 		 * We should check if the process is exiting, otherwise
 		 * it will race with cgroup_exit() in that the list
 		 * entry won't be deleted though the process has exited.
-		 * Do it while holding siglock so that we don't end up
-		 * racing against cgroup_exit().
 		 */
-		spin_lock_irq(&p->sighand->siglock);
 		if (!(p->flags & PF_EXITING) && list_empty(&p->cg_list))
 			list_add(&p->cg_list, &task_css_set(p)->tasks);
-		spin_unlock_irq(&p->sighand->siglock);
-
 		task_unlock(p);
 	} while_each_thread(g, p);
 	read_unlock(&tasklist_lock);
@@ -4393,7 +4395,7 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	struct cgroup *cgrp;
 	struct cgroup_name *name;
 	struct cgroupfs_root *root = parent->root;
-	int err;
+	int err = 0;
 	struct cgroup_subsys *ss;
 	struct super_block *sb = root->sb;
 
@@ -4403,11 +4405,17 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 		return -ENOMEM;
 
 	name = cgroup_alloc_name(dentry);
-	if (!name) {
-		err = -ENOMEM;
+	if (!name)
 		goto err_free_cgrp;
-	}
 	rcu_assign_pointer(cgrp->name, name);
+
+	/*
+	 * Temporarily set the pointer to NULL, so idr_find() won't return
+	 * a half-baked cgroup.
+	 */
+	cgrp->id = idr_alloc(&root->cgroup_idr, NULL, 1, 0, GFP_KERNEL);
+	if (cgrp->id < 0)
+		goto err_free_name;
 
 	/*
 	 * Only live parents can have children.  Note that the liveliness
@@ -4418,7 +4426,7 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	 */
 	if (!cgroup_lock_live_group(parent)) {
 		err = -ENODEV;
-		goto err_free_name;
+		goto err_free_id;
 	}
 
 	/* Grab a reference on the superblock so the hierarchy doesn't
@@ -4427,16 +4435,6 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	 * disappear while someone has an open control file on the
 	 * fs */
 	atomic_inc(&sb->s_active);
-
-	/*
-	 * Temporarily set the pointer to NULL, so idr_find() won't return
-	 * a half-baked cgroup.
-	 */
-	cgrp->id = idr_alloc(&root->cgroup_idr, NULL, 1, 0, GFP_KERNEL);
-	if (cgrp->id < 0) {
-		err = -ENOMEM;
-		goto err_unlock;
- 	}
 
 	init_cgroup_housekeeping(cgrp);
 
@@ -4544,11 +4542,11 @@ err_free_all:
 			ss->css_free(css);
 		}
 	}
-	idr_remove(&root->cgroup_idr, cgrp->id);
-err_unlock:
 	mutex_unlock(&cgroup_mutex);
 	/* Release the reference count that we took on the superblock */
 	deactivate_super(sb);
+err_free_id:
+	idr_remove(&root->cgroup_idr, cgrp->id);
 err_free_name:
 	kfree(rcu_dereference_raw(cgrp->name));
 err_free_cgrp:

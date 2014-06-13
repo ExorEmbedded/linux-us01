@@ -145,66 +145,6 @@ static int ecw2cw(int ecw)
 	return (1 << ecw) - 1;
 }
 
-static u32 chandef_downgrade(struct cfg80211_chan_def *c)
-{
-	u32 ret;
-	int tmp;
-
-	switch (c->width) {
-	case NL80211_CHAN_WIDTH_20:
-		c->width = NL80211_CHAN_WIDTH_20_NOHT;
-		ret = IEEE80211_STA_DISABLE_HT | IEEE80211_STA_DISABLE_VHT;
-		break;
-	case NL80211_CHAN_WIDTH_40:
-		c->width = NL80211_CHAN_WIDTH_20;
-		c->center_freq1 = c->chan->center_freq;
-		ret = IEEE80211_STA_DISABLE_40MHZ |
-		      IEEE80211_STA_DISABLE_VHT;
-		break;
-	case NL80211_CHAN_WIDTH_80:
-		tmp = (30 + c->chan->center_freq - c->center_freq1)/20;
-		/* n_P40 */
-		tmp /= 2;
-		/* freq_P40 */
-		c->center_freq1 = c->center_freq1 - 20 + 40 * tmp;
-		c->width = NL80211_CHAN_WIDTH_40;
-		ret = IEEE80211_STA_DISABLE_VHT;
-		break;
-	case NL80211_CHAN_WIDTH_80P80:
-		c->center_freq2 = 0;
-		c->width = NL80211_CHAN_WIDTH_80;
-		ret = IEEE80211_STA_DISABLE_80P80MHZ |
-		      IEEE80211_STA_DISABLE_160MHZ;
-		break;
-	case NL80211_CHAN_WIDTH_160:
-		/* n_P20 */
-		tmp = (70 + c->chan->center_freq - c->center_freq1)/20;
-		/* n_P80 */
-		tmp /= 4;
-		c->center_freq1 = c->center_freq1 - 40 + 80 * tmp;
-		c->width = NL80211_CHAN_WIDTH_80;
-		ret = IEEE80211_STA_DISABLE_80P80MHZ |
-		      IEEE80211_STA_DISABLE_160MHZ;
-		break;
-	default:
-	case NL80211_CHAN_WIDTH_20_NOHT:
-		WARN_ON_ONCE(1);
-		c->width = NL80211_CHAN_WIDTH_20_NOHT;
-		ret = IEEE80211_STA_DISABLE_HT | IEEE80211_STA_DISABLE_VHT;
-		break;
-	case NL80211_CHAN_WIDTH_5:
-	case NL80211_CHAN_WIDTH_10:
-		WARN_ON_ONCE(1);
-		/* keep c->width */
-		ret = IEEE80211_STA_DISABLE_HT | IEEE80211_STA_DISABLE_VHT;
-		break;
-	}
-
-	WARN_ON_ONCE(!cfg80211_chandef_valid(c));
-
-	return ret;
-}
-
 static u32
 ieee80211_determine_chantype(struct ieee80211_sub_if_data *sdata,
 			     struct ieee80211_supported_band *sband,
@@ -282,7 +222,6 @@ ieee80211_determine_chantype(struct ieee80211_sub_if_data *sdata,
 	switch (vht_oper->chan_width) {
 	case IEEE80211_VHT_CHANWIDTH_USE_HT:
 		vht_chandef.width = chandef->width;
-		vht_chandef.center_freq1 = chandef->center_freq1;
 		break;
 	case IEEE80211_VHT_CHANWIDTH_80MHZ:
 		vht_chandef.width = NL80211_CHAN_WIDTH_80;
@@ -332,28 +271,6 @@ ieee80211_determine_chantype(struct ieee80211_sub_if_data *sdata,
 	ret = 0;
 
 out:
-	/*
-	 * When tracking the current AP, don't do any further checks if the
-	 * new chandef is identical to the one we're currently using for the
-	 * connection. This keeps us from playing ping-pong with regulatory,
-	 * without it the following can happen (for example):
-	 *  - connect to an AP with 80 MHz, world regdom allows 80 MHz
-	 *  - AP advertises regdom US
-	 *  - CRDA loads regdom US with 80 MHz prohibited (old database)
-	 *  - the code below detects an unsupported channel, downgrades, and
-	 *    we disconnect from the AP in the caller
-	 *  - disconnect causes CRDA to reload world regdomain and the game
-	 *    starts anew.
-	 * (see https://bugzilla.kernel.org/show_bug.cgi?id=70881)
-	 *
-	 * It seems possible that there are still scenarios with CSA or real
-	 * bandwidth changes where a this could happen, but those cases are
-	 * less common and wouldn't completely prevent using the AP.
-	 */
-	if (tracking &&
-	    cfg80211_chandef_identical(chandef, &sdata->vif.bss_conf.chandef))
-		return ret;
-
 	/* don't print the message below for VHT mismatch if VHT is disabled */
 	if (ret & IEEE80211_STA_DISABLE_VHT)
 		vht_chandef = *chandef;
@@ -375,7 +292,7 @@ out:
 			break;
 		}
 
-		ret |= chandef_downgrade(chandef);
+		ret |= ieee80211_chandef_downgrade(chandef);
 	}
 
 	if (chandef->width != vht_chandef.width && !tracking)
@@ -429,13 +346,13 @@ static int ieee80211_config_bw(struct ieee80211_sub_if_data *sdata,
 	 */
 	if (ifmgd->flags & IEEE80211_STA_DISABLE_80P80MHZ &&
 	    chandef.width == NL80211_CHAN_WIDTH_80P80)
-		flags |= chandef_downgrade(&chandef);
+		flags |= ieee80211_chandef_downgrade(&chandef);
 	if (ifmgd->flags & IEEE80211_STA_DISABLE_160MHZ &&
 	    chandef.width == NL80211_CHAN_WIDTH_160)
-		flags |= chandef_downgrade(&chandef);
+		flags |= ieee80211_chandef_downgrade(&chandef);
 	if (ifmgd->flags & IEEE80211_STA_DISABLE_40MHZ &&
 	    chandef.width > NL80211_CHAN_WIDTH_20)
-		flags |= chandef_downgrade(&chandef);
+		flags |= ieee80211_chandef_downgrade(&chandef);
 
 	if (cfg80211_chandef_identical(&chandef, &sdata->vif.bss_conf.chandef))
 		return 0;
@@ -960,6 +877,8 @@ static void ieee80211_chswitch_work(struct work_struct *work)
 		container_of(work, struct ieee80211_sub_if_data, u.mgd.chswitch_work);
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	u32 changed = 0;
+	int ret;
 
 	if (!ieee80211_sdata_running(sdata))
 		return;
@@ -968,24 +887,39 @@ static void ieee80211_chswitch_work(struct work_struct *work)
 	if (!ifmgd->associated)
 		goto out;
 
-	local->_oper_chandef = local->csa_chandef;
+	ret = ieee80211_vif_change_channel(sdata, &local->csa_chandef,
+					   &changed);
+	if (ret) {
+		sdata_info(sdata,
+			   "vif channel switch failed, disconnecting\n");
+		ieee80211_queue_work(&sdata->local->hw,
+				     &ifmgd->csa_connection_drop_work);
+		goto out;
+	}
 
-	if (!local->ops->channel_switch) {
-		/* call "hw_config" only if doing sw channel switch */
-		ieee80211_hw_config(local, IEEE80211_CONF_CHANGE_CHANNEL);
-	} else {
-		/* update the device channel directly */
-		local->hw.conf.chandef = local->_oper_chandef;
+	if (!local->use_chanctx) {
+		local->_oper_chandef = local->csa_chandef;
+		/* Call "hw_config" only if doing sw channel switch.
+		 * Otherwise update the channel directly
+		 */
+		if (!local->ops->channel_switch)
+			ieee80211_hw_config(local, 0);
+		else
+			local->hw.conf.chandef = local->_oper_chandef;
 	}
 
 	/* XXX: shouldn't really modify cfg80211-owned data! */
-	ifmgd->associated->channel = local->_oper_chandef.chan;
+	ifmgd->associated->channel = local->csa_chandef.chan;
 
 	/* XXX: wait for a beacon first? */
 	ieee80211_wake_queues_by_reason(&local->hw,
 					IEEE80211_MAX_QUEUE_MAP,
 					IEEE80211_QUEUE_STOP_REASON_CSA);
+
+	ieee80211_bss_info_change_notify(sdata, changed);
+
  out:
+	sdata->vif.csa_active = false;
 	ifmgd->flags &= ~IEEE80211_STA_CSA_RECEIVED;
 	sdata_unlock(sdata);
 }
@@ -1023,20 +957,12 @@ ieee80211_sta_process_chanswitch(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	struct cfg80211_bss *cbss = ifmgd->associated;
-	struct ieee80211_bss *bss;
 	struct ieee80211_chanctx *chanctx;
-	enum ieee80211_band new_band;
-	int new_freq;
-	u8 new_chan_no;
+	enum ieee80211_band current_band;
 	u8 count;
 	u8 mode;
-	struct ieee80211_channel *new_chan;
 	struct cfg80211_chan_def new_chandef = {};
-	struct cfg80211_chan_def new_vht_chandef = {};
-	const struct ieee80211_sec_chan_offs_ie *sec_chan_offs;
-	const struct ieee80211_wide_bw_chansw_ie *wide_bw_chansw_ie;
-	const struct ieee80211_ht_operation *ht_oper;
-	int secondary_channel_offset = -1;
+	int res;
 
 	sdata_assert_lock(sdata);
 
@@ -1050,162 +976,23 @@ ieee80211_sta_process_chanswitch(struct ieee80211_sub_if_data *sdata,
 	if (ifmgd->flags & IEEE80211_STA_CSA_RECEIVED)
 		return;
 
-	sec_chan_offs = elems->sec_chan_offs;
-	wide_bw_chansw_ie = elems->wide_bw_chansw_ie;
-	ht_oper = elems->ht_operation;
-
-	if (ifmgd->flags & (IEEE80211_STA_DISABLE_HT |
-			    IEEE80211_STA_DISABLE_40MHZ)) {
-		sec_chan_offs = NULL;
-		wide_bw_chansw_ie = NULL;
-		/* only used for bandwidth here */
-		ht_oper = NULL;
-	}
-
-	if (ifmgd->flags & IEEE80211_STA_DISABLE_VHT)
-		wide_bw_chansw_ie = NULL;
-
-	if (elems->ext_chansw_ie) {
-		if (!ieee80211_operating_class_to_band(
-				elems->ext_chansw_ie->new_operating_class,
-				&new_band)) {
-			sdata_info(sdata,
-				   "cannot understand ECSA IE operating class %d, disconnecting\n",
-				   elems->ext_chansw_ie->new_operating_class);
-			ieee80211_queue_work(&local->hw,
-					     &ifmgd->csa_connection_drop_work);
-		}
-		new_chan_no = elems->ext_chansw_ie->new_ch_num;
-		count = elems->ext_chansw_ie->count;
-		mode = elems->ext_chansw_ie->mode;
-	} else if (elems->ch_switch_ie) {
-		new_band = cbss->channel->band;
-		new_chan_no = elems->ch_switch_ie->new_ch_num;
-		count = elems->ch_switch_ie->count;
-		mode = elems->ch_switch_ie->mode;
-	} else {
-		/* nothing here we understand */
-		return;
-	}
-
-	bss = (void *)cbss->priv;
-
-	new_freq = ieee80211_channel_to_frequency(new_chan_no, new_band);
-	new_chan = ieee80211_get_channel(sdata->local->hw.wiphy, new_freq);
-	if (!new_chan || new_chan->flags & IEEE80211_CHAN_DISABLED) {
-		sdata_info(sdata,
-			   "AP %pM switches to unsupported channel (%d MHz), disconnecting\n",
-			   ifmgd->associated->bssid, new_freq);
+	current_band = cbss->channel->band;
+	res = ieee80211_parse_ch_switch_ie(sdata, elems, beacon, current_band,
+					   ifmgd->flags,
+					   ifmgd->associated->bssid, &count,
+					   &mode, &new_chandef);
+	if (res	< 0)
 		ieee80211_queue_work(&local->hw,
 				     &ifmgd->csa_connection_drop_work);
+	if (res)
 		return;
-	}
-
-	if (!beacon && sec_chan_offs) {
-		secondary_channel_offset = sec_chan_offs->sec_chan_offs;
-	} else if (beacon && ht_oper) {
-		secondary_channel_offset =
-			ht_oper->ht_param & IEEE80211_HT_PARAM_CHA_SEC_OFFSET;
-	} else if (!(ifmgd->flags & IEEE80211_STA_DISABLE_HT)) {
-		/*
-		 * If it's not a beacon, HT is enabled and the IE not present,
-		 * it's 20 MHz, 802.11-2012 8.5.2.6:
-		 *	This element [the Secondary Channel Offset Element] is
-		 *	present when switching to a 40 MHz channel. It may be
-		 *	present when switching to a 20 MHz channel (in which
-		 *	case the secondary channel offset is set to SCN).
-		 */
-		secondary_channel_offset = IEEE80211_HT_PARAM_CHA_SEC_NONE;
-	}
-
-	switch (secondary_channel_offset) {
-	default:
-		/* secondary_channel_offset was present but is invalid */
-	case IEEE80211_HT_PARAM_CHA_SEC_NONE:
-		cfg80211_chandef_create(&new_chandef, new_chan,
-					NL80211_CHAN_HT20);
-		break;
-	case IEEE80211_HT_PARAM_CHA_SEC_ABOVE:
-		cfg80211_chandef_create(&new_chandef, new_chan,
-					NL80211_CHAN_HT40PLUS);
-		break;
-	case IEEE80211_HT_PARAM_CHA_SEC_BELOW:
-		cfg80211_chandef_create(&new_chandef, new_chan,
-					NL80211_CHAN_HT40MINUS);
-		break;
-	case -1:
-		cfg80211_chandef_create(&new_chandef, new_chan,
-					NL80211_CHAN_NO_HT);
-		/* keep width for 5/10 MHz channels */
-		switch (sdata->vif.bss_conf.chandef.width) {
-		case NL80211_CHAN_WIDTH_5:
-		case NL80211_CHAN_WIDTH_10:
-			new_chandef.width = sdata->vif.bss_conf.chandef.width;
-			break;
-		default:
-			break;
-		}
-		break;
-	}
-
-	if (wide_bw_chansw_ie) {
-		new_vht_chandef.chan = new_chan;
-		new_vht_chandef.center_freq1 =
-			ieee80211_channel_to_frequency(
-				wide_bw_chansw_ie->new_center_freq_seg0,
-				new_band);
-
-		switch (wide_bw_chansw_ie->new_channel_width) {
-		default:
-			/* hmmm, ignore VHT and use HT if present */
-		case IEEE80211_VHT_CHANWIDTH_USE_HT:
-			new_vht_chandef.chan = NULL;
-			break;
-		case IEEE80211_VHT_CHANWIDTH_80MHZ:
-			new_vht_chandef.width = NL80211_CHAN_WIDTH_80;
-			break;
-		case IEEE80211_VHT_CHANWIDTH_160MHZ:
-			new_vht_chandef.width = NL80211_CHAN_WIDTH_160;
-			break;
-		case IEEE80211_VHT_CHANWIDTH_80P80MHZ:
-			/* field is otherwise reserved */
-			new_vht_chandef.center_freq2 =
-				ieee80211_channel_to_frequency(
-					wide_bw_chansw_ie->new_center_freq_seg1,
-					new_band);
-			new_vht_chandef.width = NL80211_CHAN_WIDTH_80P80;
-			break;
-		}
-		if (ifmgd->flags & IEEE80211_STA_DISABLE_80P80MHZ &&
-		    new_vht_chandef.width == NL80211_CHAN_WIDTH_80P80)
-			chandef_downgrade(&new_vht_chandef);
-		if (ifmgd->flags & IEEE80211_STA_DISABLE_160MHZ &&
-		    new_vht_chandef.width == NL80211_CHAN_WIDTH_160)
-			chandef_downgrade(&new_vht_chandef);
-		if (ifmgd->flags & IEEE80211_STA_DISABLE_40MHZ &&
-		    new_vht_chandef.width > NL80211_CHAN_WIDTH_20)
-			chandef_downgrade(&new_vht_chandef);
-	}
-
-	/* if VHT data is there validate & use it */
-	if (new_vht_chandef.chan) {
-		if (!cfg80211_chandef_compatible(&new_vht_chandef,
-						 &new_chandef)) {
-			sdata_info(sdata,
-				   "AP %pM CSA has inconsistent channel data, disconnecting\n",
-				   ifmgd->associated->bssid);
-			ieee80211_queue_work(&local->hw,
-					     &ifmgd->csa_connection_drop_work);
-			return;
-		}
-		new_chandef = new_vht_chandef;
-	}
 
 	if (!cfg80211_chandef_usable(local->hw.wiphy, &new_chandef,
 				     IEEE80211_CHAN_DISABLED)) {
 		sdata_info(sdata,
 			   "AP %pM switches to unsupported channel (%d MHz, width:%d, CF1/2: %d/%d MHz), disconnecting\n",
-			   ifmgd->associated->bssid, new_freq,
+			   ifmgd->associated->bssid,
+			   new_chandef.chan->center_freq,
 			   new_chandef.width, new_chandef.center_freq1,
 			   new_chandef.center_freq2);
 		ieee80211_queue_work(&local->hw,
@@ -1214,17 +1001,28 @@ ieee80211_sta_process_chanswitch(struct ieee80211_sub_if_data *sdata,
 	}
 
 	ifmgd->flags |= IEEE80211_STA_CSA_RECEIVED;
-
-	if (local->use_chanctx) {
-		sdata_info(sdata,
-			   "not handling channel switch with channel contexts\n");
-		ieee80211_queue_work(&local->hw,
-				     &ifmgd->csa_connection_drop_work);
-		return;
-	}
+	sdata->vif.csa_active = true;
 
 	mutex_lock(&local->chanctx_mtx);
+	if (local->use_chanctx) {
+		u32 num_chanctx = 0;
+		list_for_each_entry(chanctx, &local->chanctx_list, list)
+		       num_chanctx++;
+
+		if (num_chanctx > 1 ||
+		    !(local->hw.flags & IEEE80211_HW_CHANCTX_STA_CSA)) {
+			sdata_info(sdata,
+				   "not handling chan-switch with channel contexts\n");
+			ieee80211_queue_work(&local->hw,
+					     &ifmgd->csa_connection_drop_work);
+			mutex_unlock(&local->chanctx_mtx);
+			return;
+		}
+	}
+
 	if (WARN_ON(!rcu_access_pointer(sdata->vif.chanctx_conf))) {
+		ieee80211_queue_work(&local->hw,
+				     &ifmgd->csa_connection_drop_work);
 		mutex_unlock(&local->chanctx_mtx);
 		return;
 	}
@@ -2197,6 +1995,7 @@ static void __ieee80211_disconnect(struct ieee80211_sub_if_data *sdata)
 			       WLAN_REASON_DISASSOC_DUE_TO_INACTIVITY,
 			       true, frame_buf);
 	ifmgd->flags &= ~IEEE80211_STA_CSA_RECEIVED;
+	sdata->vif.csa_active = false;
 	ieee80211_wake_queues_by_reason(&sdata->local->hw,
 					IEEE80211_MAX_QUEUE_MAP,
 					IEEE80211_QUEUE_STOP_REASON_CSA);
@@ -2348,6 +2147,18 @@ static void ieee80211_rx_mgmt_auth(struct ieee80211_sub_if_data *sdata,
 	if (status_code != WLAN_STATUS_SUCCESS) {
 		sdata_info(sdata, "%pM denied authentication (status %d)\n",
 			   mgmt->sa, status_code);
+
+		if (status_code == WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA) {
+			/* can't auth right now, try again in 200 ms */
+			u32 ms = 200;
+			sdata_info(sdata, "%pM rejected authentication; try again in %u ms\n",
+				   mgmt->sa, ms);
+			ifmgd->auth_data->timeout = jiffies +
+						    msecs_to_jiffies(ms);
+			run_again(sdata, ifmgd->auth_data->timeout);
+			return;
+		}
+
 		ieee80211_destroy_auth_data(sdata, false);
 		cfg80211_rx_mlme_mgmt(sdata->dev, (u8 *)mgmt, len);
 		return;
@@ -2829,6 +2640,16 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 		return;
 	}
 
+	if (status_code == WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA) {
+		/* can't assoc us right now, try again in 200 ms */
+		u32 ms = 200;
+		sdata_info(sdata, "%pM rejected association; try again in %u ms\n",
+			   mgmt->sa, ms);
+		assoc_data->timeout = jiffies + msecs_to_jiffies(ms);
+		run_again(sdata, assoc_data->timeout);
+		return;
+	}
+
 	bss = assoc_data->bss;
 
 	if (status_code != WLAN_STATUS_SUCCESS) {
@@ -2881,8 +2702,8 @@ static void ieee80211_rx_bss_info(struct ieee80211_sub_if_data *sdata,
 	bss = ieee80211_bss_info_update(local, rx_status, mgmt, len, elems,
 					channel);
 	if (bss) {
-		sdata->vif.bss_conf.beacon_rate = bss->beacon_rate;
 		ieee80211_rx_bss_put(local, bss);
+		sdata->vif.bss_conf.beacon_rate = bss->beacon_rate;
 	}
 }
 
@@ -3684,32 +3505,6 @@ static void ieee80211_restart_sta_timer(struct ieee80211_sub_if_data *sdata)
 }
 
 #ifdef CONFIG_PM
-void ieee80211_mgd_quiesce(struct ieee80211_sub_if_data *sdata)
-{
-	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
-	u8 frame_buf[IEEE80211_DEAUTH_FRAME_LEN];
-
-	sdata_lock(sdata);
-
-	if (ifmgd->auth_data) {
-		/*
-		 * If we are trying to authenticate while suspending, cfg80211
-		 * won't know and won't actually abort those attempts, thus we
-		 * need to do that ourselves.
-		 */
-		ieee80211_send_deauth_disassoc(sdata,
-					       ifmgd->auth_data->bss->bssid,
-					       IEEE80211_STYPE_DEAUTH,
-					       WLAN_REASON_DEAUTH_LEAVING,
-					       false, frame_buf);
-		ieee80211_destroy_auth_data(sdata, false);
-		cfg80211_tx_mlme_mgmt(sdata->dev, frame_buf,
-				      IEEE80211_DEAUTH_FRAME_LEN);
-	}
-
-	sdata_unlock(sdata);
-}
-
 void ieee80211_sta_restart(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
@@ -3925,7 +3720,7 @@ static int ieee80211_prep_channel(struct ieee80211_sub_if_data *sdata,
 		return ret;
 
 	while (ret && chandef.width != NL80211_CHAN_WIDTH_20_NOHT) {
-		ifmgd->flags |= chandef_downgrade(&chandef);
+		ifmgd->flags |= ieee80211_chandef_downgrade(&chandef);
 		ret = ieee80211_vif_use_channel(sdata, &chandef,
 						IEEE80211_CHANCTX_SHARED);
 	}

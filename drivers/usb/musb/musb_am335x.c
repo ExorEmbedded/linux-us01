@@ -46,10 +46,14 @@ static struct platform_driver am335x_child_driver = {
 	.remove         = am335x_child_remove,
 	.driver         = {
 		.name   = "am335x-usb-childs",
-		.of_match_table	= of_match_ptr(am335x_child_of_match),
+		.of_match_table	= am335x_child_of_match,
 	},
 };
 
-module_platform_driver(am335x_child_driver);
+static int __init am335x_child_init(void)
+{
+	return platform_driver_register(&am335x_child_driver);
+}
+module_init(am335x_child_init);
 MODULE_DESCRIPTION("AM33xx child devices");
 MODULE_LICENSE("GPL v2");

@@ -1184,6 +1184,9 @@ irqreturn_t musb_h_ep0_irq(struct musb *musb)
 				csr = MUSB_CSR0_H_STATUSPKT
 					| MUSB_CSR0_TXPKTRDY;
 
+			/* disable ping token in status phase */
+			csr |= MUSB_CSR0_H_DIS_PING;
+
 			/* flag status stage */
 			musb->ep0_stage = MUSB_EP0_STATUS;
 
@@ -1690,9 +1693,11 @@ void musb_host_rx(struct musb *musb, u8 epnum)
 			| MUSB_RXCSR_H_AUTOREQ
 			| MUSB_RXCSR_AUTOCLEAR
 			| MUSB_RXCSR_RXPKTRDY);
+
 		musb_writew(hw_ep->regs, MUSB_RXCSR, val);
 
-#if defined(CONFIG_USB_INVENTRA_DMA) || defined(CONFIG_USB_UX500_DMA)
+#if defined(CONFIG_USB_INVENTRA_DMA) || defined(CONFIG_USB_UX500_DMA) || \
+	defined(CONFIG_USB_TI_CPPI41_DMA)
 		if (usb_pipeisoc(pipe)) {
 			struct usb_iso_packet_descriptor *d;
 
@@ -1707,8 +1712,28 @@ void musb_host_rx(struct musb *musb, u8 epnum)
 
 			if (++qh->iso_idx >= urb->number_of_packets)
 				done = true;
-			else
+			else {
+#if defined(CONFIG_USB_TI_CPPI41_DMA)
+				struct dma_controller   *c;
+				dma_addr_t *buf;
+				u32 length, ret;
+
+				c = musb->dma_controller;
+				buf = (void *)
+					urb->iso_frame_desc[qh->iso_idx].offset
+					+ (u32)urb->transfer_dma;
+
+				length =
+					urb->iso_frame_desc[qh->iso_idx].length;
+
+				val |= MUSB_RXCSR_DMAENAB;
+				musb_writew(hw_ep->regs, MUSB_RXCSR, val);
+
+				ret = c->channel_program(dma, qh->maxpacket,
+						0, (u32) buf, length);
+#endif
 				done = false;
+			}
 
 		} else  {
 		/* done if urb buffer is full or short packet is recd */
@@ -1748,7 +1773,8 @@ void musb_host_rx(struct musb *musb, u8 epnum)
 		}
 
 		/* we are expecting IN packets */
-#if defined(CONFIG_USB_INVENTRA_DMA) || defined(CONFIG_USB_UX500_DMA)
+#if defined(CONFIG_USB_INVENTRA_DMA) || defined(CONFIG_USB_UX500_DMA) || \
+	defined(CONFIG_USB_TI_CPPI41_DMA)
 		if (dma) {
 			struct dma_controller	*c;
 			u16			rx_count;
@@ -2433,6 +2459,8 @@ static int musb_bus_suspend(struct usb_hcd *hcd)
 	struct musb	*musb = hcd_to_musb(hcd);
 	u8		devctl;
 
+	musb_port_suspend(musb, true);
+
 	if (!is_host_active(musb))
 		return 0;
 
@@ -2462,7 +2490,6 @@ static int musb_bus_suspend(struct usb_hcd *hcd)
 
 static int musb_bus_resume(struct usb_hcd *hcd)
 {
-	/* resuming child port does the work */
 	return 0;
 }
 
@@ -2581,7 +2608,7 @@ static const struct hc_driver musb_hc_driver = {
 	.description		= "musb-hcd",
 	.product_desc		= "MUSB HDRC host driver",
 	.hcd_priv_size		= sizeof(struct musb *),
-	.flags			= HCD_USB2 | HCD_MEMORY,
+	.flags			= HCD_USB2 | HCD_MEMORY | HCD_BH,
 
 	/* not using irq handler or reset hooks from usbcore, since
 	 * those must be shared with peripheral code for OTG configs

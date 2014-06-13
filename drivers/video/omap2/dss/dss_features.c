@@ -93,6 +93,17 @@ static const struct dss_reg_field omap3_dss_reg_fields[] = {
 	[FEAT_REG_DSIPLL_REGM_DSI]		= { 26, 23 },
 };
 
+static const struct dss_reg_field am43xx_dss_reg_fields[] = {
+	[FEAT_REG_FIRHINC]			= { 12, 0 },
+	[FEAT_REG_FIRVINC]			= { 28, 16 },
+	[FEAT_REG_FIFOLOWTHRESHOLD]	= { 11, 0 },
+	[FEAT_REG_FIFOHIGHTHRESHOLD]		= { 27, 16 },
+	[FEAT_REG_FIFOSIZE]		= { 10, 0 },
+	[FEAT_REG_HORIZONTALACCU]		= { 9, 0 },
+	[FEAT_REG_VERTICALACCU]			= { 25, 16 },
+	[FEAT_REG_DISPC_CLK_SWITCH]		= { 0, 0 },
+};
+
 static const struct dss_reg_field omap4_dss_reg_fields[] = {
 	[FEAT_REG_FIRHINC]			= { 12, 0 },
 	[FEAT_REG_FIRVINC]			= { 28, 16 },
@@ -149,6 +160,11 @@ static const enum omap_display_type omap3630_dss_supported_displays[] = {
 	OMAP_DISPLAY_TYPE_VENC,
 };
 
+static const enum omap_display_type am43xx_dss_supported_displays[] = {
+	/* OMAP_DSS_CHANNEL_LCD */
+	OMAP_DISPLAY_TYPE_DPI | OMAP_DISPLAY_TYPE_DBI,
+};
+
 static const enum omap_display_type omap4_dss_supported_displays[] = {
 	/* OMAP_DSS_CHANNEL_LCD */
 	OMAP_DISPLAY_TYPE_DBI | OMAP_DISPLAY_TYPE_DSI,
@@ -172,6 +188,20 @@ static const enum omap_display_type omap5_dss_supported_displays[] = {
 	/* OMAP_DSS_CHANNEL_LCD2 */
 	OMAP_DISPLAY_TYPE_DPI | OMAP_DISPLAY_TYPE_DBI |
 	OMAP_DISPLAY_TYPE_DSI,
+};
+
+static const enum omap_display_type dra7xx_dss_supported_displays[] = {
+	/* OMAP_DSS_CHANNEL_LCD */
+	OMAP_DISPLAY_TYPE_DPI,
+
+	/* OMAP_DSS_CHANNEL_DIGIT */
+	OMAP_DISPLAY_TYPE_HDMI | OMAP_DISPLAY_TYPE_DPI,
+
+	/* OMAP_DSS_CHANNEL_LCD2 */
+	OMAP_DISPLAY_TYPE_DPI,
+
+	/* OMAP_DSS_CHANNEL_LCD3 */
+	OMAP_DISPLAY_TYPE_DPI,
 };
 
 static const enum omap_dss_output_id omap2_dss_supported_outputs[] = {
@@ -198,6 +228,11 @@ static const enum omap_dss_output_id omap3630_dss_supported_outputs[] = {
 
 	/* OMAP_DSS_CHANNEL_DIGIT */
 	OMAP_DSS_OUTPUT_VENC,
+};
+
+static const enum omap_dss_output_id am43xx_dss_supported_outputs[] = {
+	/* OMAP_DSS_CHANNEL_LCD */
+	OMAP_DSS_OUTPUT_DPI | OMAP_DSS_OUTPUT_DBI,
 };
 
 static const enum omap_dss_output_id omap4_dss_supported_outputs[] = {
@@ -227,6 +262,20 @@ static const enum omap_dss_output_id omap5_dss_supported_outputs[] = {
 	/* OMAP_DSS_CHANNEL_LCD3 */
 	OMAP_DSS_OUTPUT_DPI | OMAP_DSS_OUTPUT_DBI |
 	OMAP_DSS_OUTPUT_DSI2,
+};
+
+static const enum omap_dss_output_id dra7xx_dss_supported_outputs[] = {
+	/* OMAP_DSS_CHANNEL_LCD */
+	OMAP_DSS_OUTPUT_DPI,
+
+	/* OMAP_DSS_CHANNEL_DIGIT */
+	OMAP_DSS_OUTPUT_HDMI | OMAP_DSS_OUTPUT_DPI,
+
+	/* OMAP_DSS_CHANNEL_LCD2 */
+	OMAP_DSS_OUTPUT_DPI | OMAP_DSS_OUTPUT_DPI1,
+
+	/* OMAP_DSS_CHANNEL_LCD3 */
+	OMAP_DSS_OUTPUT_DPI | OMAP_DSS_OUTPUT_DPI2,
 };
 
 static const enum omap_color_mode omap2_dss_supported_color_modes[] = {
@@ -444,6 +493,13 @@ static const struct dss_param_range omap3_dss_param_range[] = {
 	[FEAT_PARAM_LINEWIDTH]			= { 1, 1024 },
 };
 
+static const struct dss_param_range am43xx_dss_param_range[] = {
+	[FEAT_PARAM_DSS_FCK]			= { 0, 200000000 },
+	[FEAT_PARAM_DSS_PCD]			= { 2, 255 },
+	[FEAT_PARAM_DOWNSCALE]			= { 1, 4 },
+	[FEAT_PARAM_LINEWIDTH]			= { 1, 1024 },
+};
+
 static const struct dss_param_range omap4_dss_param_range[] = {
 	[FEAT_PARAM_DSS_FCK]			= { 0, 186000000 },
 	[FEAT_PARAM_DSS_PCD]			= { 1, 255 },
@@ -518,6 +574,21 @@ static const enum dss_feat_id am35xx_dss_feat_list[] = {
 	FEAT_ALPHA_FIXED_ZORDER,
 	FEAT_FIFO_MERGE,
 	FEAT_OMAP3_DSI_FIFO_BUG,
+};
+
+static const enum dss_feat_id am43xx_dss_feat_list[] = {
+	FEAT_LCDENABLEPOL,
+	FEAT_LCDENABLESIGNAL,
+	FEAT_PCKFREEENABLE,
+	FEAT_FUNCGATED,
+	FEAT_LINEBUFFERSPLIT,
+	FEAT_ROWREPEATENABLE,
+	FEAT_RESIZECONF,
+	FEAT_CPR,
+	FEAT_PRELOAD,
+	FEAT_FIR_COEF_V,
+	FEAT_ALPHA_FIXED_ZORDER,
+	FEAT_FIFO_MERGE,
 };
 
 static const enum dss_feat_id omap3630_dss_feat_list[] = {
@@ -595,6 +666,7 @@ static const enum dss_feat_id omap4_dss_feat_list[] = {
 
 static const enum dss_feat_id omap5_dss_feat_list[] = {
 	FEAT_MGR_LCD2,
+	FEAT_MGR_LCD3,
 	FEAT_CORE_CLK_DIV,
 	FEAT_LCD_CLK_SRC,
 	FEAT_DSI_DCS_CMD_CONFIG_VC,
@@ -677,6 +749,26 @@ static const struct omap_dss_features am35xx_dss_features = {
 	.clksrc_names = omap3_dss_clk_source_names,
 	.dss_params = omap3_dss_param_range,
 	.supported_rotation_types = OMAP_DSS_ROT_DMA | OMAP_DSS_ROT_VRFB,
+	.buffer_size_unit = 1,
+	.burst_size_unit = 8,
+};
+
+static const struct omap_dss_features am43xx_dss_features = {
+	.reg_fields = am43xx_dss_reg_fields,
+	.num_reg_fields = ARRAY_SIZE(am43xx_dss_reg_fields),
+
+	.features = am43xx_dss_feat_list,
+	.num_features = ARRAY_SIZE(am43xx_dss_feat_list),
+
+	.num_mgrs = 1,
+	.num_ovls = 3,
+	.supported_displays = am43xx_dss_supported_displays,
+	.supported_outputs = am43xx_dss_supported_outputs,
+	.supported_color_modes = omap3_dss_supported_color_modes,
+	.overlay_caps = omap3430_dss_overlay_caps,
+	.clksrc_names = omap2_dss_clk_source_names,
+	.dss_params = am43xx_dss_param_range,
+	.supported_rotation_types = OMAP_DSS_ROT_DMA,
 	.buffer_size_unit = 1,
 	.burst_size_unit = 8,
 };
@@ -789,49 +881,26 @@ static const struct omap_dss_features omap5_dss_features = {
 	.burst_size_unit = 16,
 };
 
-#if defined(CONFIG_OMAP4_DSS_HDMI)
-/* HDMI OMAP4 Functions*/
-static const struct ti_hdmi_ip_ops omap4_hdmi_functions = {
+/* DRA DSS Features */
+static const struct omap_dss_features dra7xx_dss_features = {
+	.reg_fields = omap5_dss_reg_fields,
+	.num_reg_fields = ARRAY_SIZE(omap5_dss_reg_fields),
 
-	.video_configure	=	ti_hdmi_4xxx_basic_configure,
-	.phy_enable		=	ti_hdmi_4xxx_phy_enable,
-	.phy_disable		=	ti_hdmi_4xxx_phy_disable,
-	.read_edid		=	ti_hdmi_4xxx_read_edid,
-	.pll_enable		=	ti_hdmi_4xxx_pll_enable,
-	.pll_disable		=	ti_hdmi_4xxx_pll_disable,
-	.video_enable		=	ti_hdmi_4xxx_wp_video_start,
-	.video_disable		=	ti_hdmi_4xxx_wp_video_stop,
-	.dump_wrapper		=	ti_hdmi_4xxx_wp_dump,
-	.dump_core		=	ti_hdmi_4xxx_core_dump,
-	.dump_pll		=	ti_hdmi_4xxx_pll_dump,
-	.dump_phy		=	ti_hdmi_4xxx_phy_dump,
-#if defined(CONFIG_OMAP4_DSS_HDMI_AUDIO)
-	.audio_enable		=       ti_hdmi_4xxx_wp_audio_enable,
-	.audio_disable		=       ti_hdmi_4xxx_wp_audio_disable,
-	.audio_start		=       ti_hdmi_4xxx_audio_start,
-	.audio_stop		=       ti_hdmi_4xxx_audio_stop,
-	.audio_config		=	ti_hdmi_4xxx_audio_config,
-	.audio_get_dma_port	=	ti_hdmi_4xxx_audio_get_dma_port,
-#endif
+	.features = omap5_dss_feat_list,
+	.num_features = ARRAY_SIZE(omap5_dss_feat_list),
 
+	.num_mgrs = 4,
+	.num_ovls = 4,
+	.supported_displays = dra7xx_dss_supported_displays,
+	.supported_outputs = dra7xx_dss_supported_outputs,
+	.supported_color_modes = omap4_dss_supported_color_modes,
+	.overlay_caps = omap4_dss_overlay_caps,
+	.clksrc_names = omap5_dss_clk_source_names,
+	.dss_params = omap5_dss_param_range,
+	.supported_rotation_types = OMAP_DSS_ROT_DMA | OMAP_DSS_ROT_TILER,
+	.buffer_size_unit = 16,
+	.burst_size_unit = 16,
 };
-
-void dss_init_hdmi_ip_ops(struct hdmi_ip_data *ip_data,
-		enum omapdss_version version)
-{
-	switch (version) {
-	case OMAPDSS_VER_OMAP4430_ES1:
-	case OMAPDSS_VER_OMAP4430_ES2:
-	case OMAPDSS_VER_OMAP4:
-		ip_data->ops = &omap4_hdmi_functions;
-		break;
-	default:
-		ip_data->ops = NULL;
-	}
-
-	WARN_ON(ip_data->ops == NULL);
-}
-#endif
 
 /* Functions returning values related to a DSS feature */
 int dss_feat_get_num_mgrs(void)
@@ -967,8 +1036,16 @@ void dss_features_init(enum omapdss_version version)
 		omap_current_dss_features = &omap5_dss_features;
 		break;
 
+	case OMAPDSS_VER_DRA7xx:
+		omap_current_dss_features = &dra7xx_dss_features;
+		break;
+
 	case OMAPDSS_VER_AM35xx:
 		omap_current_dss_features = &am35xx_dss_features;
+		break;
+
+	case OMAPDSS_VER_AM43xx:
+		omap_current_dss_features = &am43xx_dss_features;
 		break;
 
 	default:

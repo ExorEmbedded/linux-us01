@@ -346,7 +346,9 @@ int omap_tll_init(struct usbhs_omap_platform_data *pdata)
 	for (i = 0; i < tll->nch; i++)
 		needs_tll |= omap_usb_mode_needs_tll(pdata->port_mode[i]);
 
+	spin_unlock(&tll_lock);
 	pm_runtime_get_sync(tll_dev);
+	spin_lock(&tll_lock);
 
 	if (needs_tll) {
 		void __iomem *base = tll->base;
@@ -398,9 +400,8 @@ int omap_tll_init(struct usbhs_omap_platform_data *pdata)
 		}
 	}
 
-	pm_runtime_put_sync(tll_dev);
-
 	spin_unlock(&tll_lock);
+	pm_runtime_put_sync(tll_dev);
 
 	return 0;
 }
@@ -420,7 +421,9 @@ int omap_tll_enable(struct usbhs_omap_platform_data *pdata)
 
 	tll = dev_get_drvdata(tll_dev);
 
+	spin_unlock(&tll_lock);
 	pm_runtime_get_sync(tll_dev);
+	spin_lock(&tll_lock);
 
 	for (i = 0; i < tll->nch; i++) {
 		if (omap_usb_mode_needs_tll(pdata->port_mode[i])) {
@@ -429,7 +432,7 @@ int omap_tll_enable(struct usbhs_omap_platform_data *pdata)
 			if (IS_ERR(tll->ch_clk[i]))
 				continue;
 
-			r = clk_enable(tll->ch_clk[i]);
+			r = clk_prepare_enable(tll->ch_clk[i]);
 			if (r) {
 				dev_err(tll_dev,
 				 "Error enabling ch %d clock: %d\n", i, r);
@@ -438,7 +441,6 @@ int omap_tll_enable(struct usbhs_omap_platform_data *pdata)
 	}
 
 	spin_unlock(&tll_lock);
-
 	return 0;
 }
 EXPORT_SYMBOL_GPL(omap_tll_enable);
@@ -460,13 +462,12 @@ int omap_tll_disable(struct usbhs_omap_platform_data *pdata)
 	for (i = 0; i < tll->nch; i++) {
 		if (omap_usb_mode_needs_tll(pdata->port_mode[i])) {
 			if (!IS_ERR(tll->ch_clk[i]))
-				clk_disable(tll->ch_clk[i]);
+				clk_disable_unprepare(tll->ch_clk[i]);
 		}
 	}
 
-	pm_runtime_put_sync(tll_dev);
-
 	spin_unlock(&tll_lock);
+	pm_runtime_put_sync(tll_dev);
 
 	return 0;
 }

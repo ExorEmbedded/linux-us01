@@ -299,7 +299,9 @@ static void omap2_mcspi_set_fifo(const struct spi_device *spi,
 		if (t->rx_buf != NULL) {
 			chconf |= OMAP2_MCSPI_CHCONF_FFER;
 			xferlevel |= (fifo_depth - 1) << 8;
-		} else {
+		}
+
+		if (t->tx_buf != NULL) {
 			chconf |= OMAP2_MCSPI_CHCONF_FFET;
 			xferlevel |= fifo_depth - 1;
 		}
@@ -1445,6 +1447,13 @@ static int omap2_mcspi_remove(struct platform_device *pdev)
 MODULE_ALIAS("platform:omap2_mcspi");
 
 #ifdef	CONFIG_SUSPEND
+static int omap2_mcspi_suspend(struct device *dev)
+{
+	pinctrl_pm_select_sleep_state(dev);
+
+	return 0;
+}
+
 /*
  * When SPI wake up from off-mode, CS is in activate state. If it was in
  * unactive state when driver was suspend, then force it to unactive state at
@@ -1456,6 +1465,8 @@ static int omap2_mcspi_resume(struct device *dev)
 	struct omap2_mcspi	*mcspi = spi_master_get_devdata(master);
 	struct omap2_mcspi_regs	*ctx = &mcspi->ctx;
 	struct omap2_mcspi_cs	*cs;
+
+	pinctrl_pm_select_default_state(dev);
 
 	pm_runtime_get_sync(mcspi->dev);
 	list_for_each_entry(cs, &ctx->cs, node) {
@@ -1474,12 +1485,10 @@ static int omap2_mcspi_resume(struct device *dev)
 	pm_runtime_put_autosuspend(mcspi->dev);
 	return 0;
 }
-#else
-#define	omap2_mcspi_resume	NULL
-#endif
+#endif /* CONFIG_SUSPEND */
 
 static const struct dev_pm_ops omap2_mcspi_pm_ops = {
-	.resume = omap2_mcspi_resume,
+	SET_SYSTEM_SLEEP_PM_OPS(omap2_mcspi_suspend, omap2_mcspi_resume)
 	.runtime_resume	= omap_mcspi_runtime_resume,
 };
 

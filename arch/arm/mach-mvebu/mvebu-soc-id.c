@@ -88,7 +88,7 @@ static int __init mvebu_soc_id_init(void)
 	}
 
 	pci_base = of_iomap(child, 0);
-	if (pci_base == NULL) {
+	if (IS_ERR(pci_base)) {
 		pr_err("cannot map registers\n");
 		ret = -ENOMEM;
 		goto res_ioremap;

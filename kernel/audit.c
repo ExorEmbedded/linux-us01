@@ -103,8 +103,7 @@ static int	audit_rate_limit;
 
 /* Number of outstanding audit_buffers allowed. */
 static int	audit_backlog_limit = 64;
-#define AUDIT_BACKLOG_WAIT_TIME (60 * HZ)
-static int	audit_backlog_wait_time = AUDIT_BACKLOG_WAIT_TIME;
+static int	audit_backlog_wait_time = 60 * HZ;
 static int	audit_backlog_wait_overflow = 0;
 
 /* The identity of the user shutting down the audit system. */
@@ -1136,8 +1135,6 @@ struct audit_buffer *audit_log_start(struct audit_context *ctx, gfp_t gfp_mask,
 		return NULL;
 	}
 
-	audit_backlog_wait_time = AUDIT_BACKLOG_WAIT_TIME;
-
 	ab = audit_buffer_alloc(ctx, gfp_mask, type);
 	if (!ab) {
 		audit_log_lost("out of memory in audit_log_start");
@@ -1613,10 +1610,10 @@ void audit_log_task_info(struct audit_buffer *ab, struct task_struct *tsk)
 	spin_unlock_irq(&tsk->sighand->siglock);
 
 	audit_log_format(ab,
-			 " ppid=%d pid=%d auid=%u uid=%u gid=%u"
+			 " ppid=%ld pid=%d auid=%u uid=%u gid=%u"
 			 " euid=%u suid=%u fsuid=%u"
-			 " egid=%u sgid=%u fsgid=%u tty=%s ses=%u",
-			 task_ppid_nr(tsk),
+			 " egid=%u sgid=%u fsgid=%u ses=%u tty=%s",
+			 sys_getppid(),
 			 tsk->pid,
 			 from_kuid(&init_user_ns, audit_get_loginuid(tsk)),
 			 from_kuid(&init_user_ns, cred->uid),
@@ -1627,7 +1624,7 @@ void audit_log_task_info(struct audit_buffer *ab, struct task_struct *tsk)
 			 from_kgid(&init_user_ns, cred->egid),
 			 from_kgid(&init_user_ns, cred->sgid),
 			 from_kgid(&init_user_ns, cred->fsgid),
-			 tty, audit_get_sessionid(tsk));
+			 audit_get_sessionid(tsk), tty);
 
 	get_task_comm(name, tsk);
 	audit_log_format(ab, " comm=");

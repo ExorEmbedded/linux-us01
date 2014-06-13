@@ -1092,7 +1092,7 @@ static const u32 spectre_golden_registers[] =
 	0x8a14, 0xf000003f, 0x00000007,
 	0x8b24, 0xffffffff, 0x00ffffff,
 	0x28350, 0x3f3f3fff, 0x00000082,
-	0x28354, 0x0000003f, 0x00000000,
+	0x28355, 0x0000003f, 0x00000000,
 	0x3e78, 0x00000001, 0x00000002,
 	0x913c, 0xffff03df, 0x00000004,
 	0xc768, 0x00000008, 0x00000008,
@@ -3517,11 +3517,8 @@ static void cik_cp_compute_enable(struct radeon_device *rdev, bool enable)
 {
 	if (enable)
 		WREG32(CP_MEC_CNTL, 0);
-	else {
+	else
 		WREG32(CP_MEC_CNTL, (MEC_ME1_HALT | MEC_ME2_HALT));
-		rdev->ring[CAYMAN_RING_TYPE_CP1_INDEX].ready = false;
-		rdev->ring[CAYMAN_RING_TYPE_CP2_INDEX].ready = false;
-	}
 	udelay(50);
 }
 
@@ -6998,7 +6995,26 @@ static int cik_startup(struct radeon_device *rdev)
 
 	cik_mc_program(rdev);
 
-	if (!(rdev->flags & RADEON_IS_IGP)) {
+	if (rdev->flags & RADEON_IS_IGP) {
+		if (!rdev->me_fw || !rdev->pfp_fw || !rdev->ce_fw ||
+		    !rdev->mec_fw || !rdev->sdma_fw || !rdev->rlc_fw) {
+			r = cik_init_microcode(rdev);
+			if (r) {
+				DRM_ERROR("Failed to load firmware!\n");
+				return r;
+			}
+		}
+	} else {
+		if (!rdev->me_fw || !rdev->pfp_fw || !rdev->ce_fw ||
+		    !rdev->mec_fw || !rdev->sdma_fw || !rdev->rlc_fw ||
+		    !rdev->mc_fw) {
+			r = cik_init_microcode(rdev);
+			if (r) {
+				DRM_ERROR("Failed to load firmware!\n");
+				return r;
+			}
+		}
+
 		r = ci_mc_load_microcode(rdev);
 		if (r) {
 			DRM_ERROR("Failed to load MC firmware!\n");
@@ -7310,27 +7326,6 @@ int cik_init(struct radeon_device *rdev)
 	r = radeon_bo_init(rdev);
 	if (r)
 		return r;
-
-	if (rdev->flags & RADEON_IS_IGP) {
-		if (!rdev->me_fw || !rdev->pfp_fw || !rdev->ce_fw ||
-		    !rdev->mec_fw || !rdev->sdma_fw || !rdev->rlc_fw) {
-			r = cik_init_microcode(rdev);
-			if (r) {
-				DRM_ERROR("Failed to load firmware!\n");
-				return r;
-			}
-		}
-	} else {
-		if (!rdev->me_fw || !rdev->pfp_fw || !rdev->ce_fw ||
-		    !rdev->mec_fw || !rdev->sdma_fw || !rdev->rlc_fw ||
-		    !rdev->mc_fw) {
-			r = cik_init_microcode(rdev);
-			if (r) {
-				DRM_ERROR("Failed to load firmware!\n");
-				return r;
-			}
-		}
-	}
 
 	ring = &rdev->ring[RADEON_RING_TYPE_GFX_INDEX];
 	ring->ring_obj = NULL;

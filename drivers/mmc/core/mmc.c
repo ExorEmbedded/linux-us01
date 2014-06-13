@@ -1116,15 +1116,12 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	 * Indicate DDR mode (if supported).
 	 */
 	if (mmc_card_highspeed(card)) {
-		if ((card->ext_csd.card_type & EXT_CSD_CARD_TYPE_DDR_1_8V)
-			&& ((host->caps & (MMC_CAP_1_8V_DDR |
-			     MMC_CAP_UHS_DDR50))
-				== (MMC_CAP_1_8V_DDR | MMC_CAP_UHS_DDR50)))
+		if ((card->ext_csd.card_type & EXT_CSD_CARD_TYPE_DDR_1_8V) &&
+		    (host->caps & MMC_CAP_1_8V_DDR))
 				ddr = MMC_1_8V_DDR_MODE;
-		else if ((card->ext_csd.card_type & EXT_CSD_CARD_TYPE_DDR_1_2V)
-			&& ((host->caps & (MMC_CAP_1_2V_DDR |
-			     MMC_CAP_UHS_DDR50))
-				== (MMC_CAP_1_2V_DDR | MMC_CAP_UHS_DDR50)))
+		else if ((card->ext_csd.card_type &
+			  EXT_CSD_CARD_TYPE_DDR_1_2V) &&
+			 (host->caps & MMC_CAP_1_2V_DDR))
 				ddr = MMC_1_2V_DDR_MODE;
 	}
 
@@ -1512,14 +1509,6 @@ static int mmc_suspend(struct mmc_host *host)
 }
 
 /*
- * Shutdown callback
- */
-static int mmc_shutdown(struct mmc_host *host)
-{
-	return _mmc_suspend(host, false);
-}
-
-/*
  * Resume callback from host.
  *
  * This function tries to determine if the same card is still present
@@ -1608,7 +1597,6 @@ static const struct mmc_bus_ops mmc_ops = {
 	.resume = NULL,
 	.power_restore = mmc_power_restore,
 	.alive = mmc_alive,
-	.shutdown = mmc_shutdown,
 };
 
 static const struct mmc_bus_ops mmc_ops_unsafe = {
@@ -1620,7 +1608,6 @@ static const struct mmc_bus_ops mmc_ops_unsafe = {
 	.runtime_resume = mmc_runtime_resume,
 	.power_restore = mmc_power_restore,
 	.alive = mmc_alive,
-	.shutdown = mmc_shutdown,
 };
 
 static void mmc_attach_bus_ops(struct mmc_host *host)

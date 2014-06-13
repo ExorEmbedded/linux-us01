@@ -43,13 +43,12 @@
  * with optimized DDR & EMIF settings tweaked 1920x1080@24 appears to
  * be supportable
  */
-#define TILCDC_DEFAULT_MAX_BANDWIDTH  (1280*1024*60)
+#define TILCDC_DEFAULT_MAX_BANDWIDTH  (1680*1050*60)
 
 
 struct tilcdc_drm_private {
 	void __iomem *mmio;
 
-	struct clk *disp_clk;    /* display dpll */
 	struct clk *clk;         /* functional clock */
 	int rev;                 /* IP revision */
 

@@ -1073,6 +1073,7 @@ static inline u64 get_kernel_ns(void)
 {
 	struct timespec ts;
 
+	WARN_ON(preemptible());
 	ktime_get_ts(&ts);
 	monotonic_to_bootbased(&ts);
 	return timespec_to_ns(&ts);
@@ -6140,7 +6141,7 @@ static int complete_emulated_mmio(struct kvm_vcpu *vcpu)
 		frag->len -= len;
 	}
 
-	if (vcpu->mmio_cur_fragment >= vcpu->mmio_nr_fragments) {
+	if (vcpu->mmio_cur_fragment == vcpu->mmio_nr_fragments) {
 		vcpu->mmio_needed = 0;
 
 		/* FIXME: return into emulator if single-stepping.  */

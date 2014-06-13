@@ -512,7 +512,6 @@ struct dm_thin_new_mapping {
 	unsigned quiesced:1;
 	unsigned prepared:1;
 	unsigned pass_discard:1;
-	unsigned definitely_not_shared:1;
 
 	struct thin_c *tc;
 	dm_block_t virt_block;
@@ -684,15 +683,7 @@ static void process_prepared_discard_passdown(struct dm_thin_new_mapping *m)
 	cell_defer_no_holder(tc, m->cell2);
 
 	if (m->pass_discard)
-		if (m->definitely_not_shared)
-			remap_and_issue(tc, m->bio, m->data_block);
-		else {
-			bool used = false;
-			if (dm_pool_block_is_used(tc->pool->pmd, m->data_block, &used) || used)
-				bio_endio(m->bio, 0);
-			else
-				remap_and_issue(tc, m->bio, m->data_block);
-		}
+		remap_and_issue(tc, m->bio, m->data_block);
 	else
 		bio_endio(m->bio, 0);
 
@@ -760,17 +751,13 @@ static int ensure_next_mapping(struct pool *pool)
 
 static struct dm_thin_new_mapping *get_next_mapping(struct pool *pool)
 {
-	struct dm_thin_new_mapping *m = pool->next_mapping;
+	struct dm_thin_new_mapping *r = pool->next_mapping;
 
 	BUG_ON(!pool->next_mapping);
 
-	memset(m, 0, sizeof(struct dm_thin_new_mapping));
-	INIT_LIST_HEAD(&m->list);
-	m->bio = NULL;
-
 	pool->next_mapping = NULL;
 
-	return m;
+	return r;
 }
 
 static void schedule_copy(struct thin_c *tc, dm_block_t virt_block,
@@ -782,10 +769,15 @@ static void schedule_copy(struct thin_c *tc, dm_block_t virt_block,
 	struct pool *pool = tc->pool;
 	struct dm_thin_new_mapping *m = get_next_mapping(pool);
 
+	INIT_LIST_HEAD(&m->list);
+	m->quiesced = 0;
+	m->prepared = 0;
 	m->tc = tc;
 	m->virt_block = virt_block;
 	m->data_block = data_dest;
 	m->cell = cell;
+	m->err = 0;
+	m->bio = NULL;
 
 	if (!dm_deferred_set_add_work(pool->shared_read_ds, &m->list))
 		m->quiesced = 1;
@@ -848,12 +840,15 @@ static void schedule_zero(struct thin_c *tc, dm_block_t virt_block,
 	struct pool *pool = tc->pool;
 	struct dm_thin_new_mapping *m = get_next_mapping(pool);
 
+	INIT_LIST_HEAD(&m->list);
 	m->quiesced = 1;
 	m->prepared = 0;
 	m->tc = tc;
 	m->virt_block = virt_block;
 	m->data_block = data_block;
 	m->cell = cell;
+	m->err = 0;
+	m->bio = NULL;
 
 	/*
 	 * If the whole block of data is being overwritten or we are not
@@ -1045,12 +1040,12 @@ static void process_discard(struct thin_c *tc, struct bio *bio)
 			 */
 			m = get_next_mapping(pool);
 			m->tc = tc;
-			m->pass_discard = pool->pf.discard_passdown;
-			m->definitely_not_shared = !lookup_result.shared;
+			m->pass_discard = (!lookup_result.shared) && pool->pf.discard_passdown;
 			m->virt_block = block;
 			m->data_block = lookup_result.block;
 			m->cell = cell;
 			m->cell2 = cell2;
+			m->err = 0;
 			m->bio = bio;
 
 			if (!dm_deferred_set_add_work(pool->all_io_ds, &m->list)) {
@@ -1332,9 +1327,9 @@ static void process_deferred_bios(struct pool *pool)
 		 */
 		if (ensure_next_mapping(pool)) {
 			spin_lock_irqsave(&pool->lock, flags);
-			bio_list_add(&pool->deferred_bios, bio);
 			bio_list_merge(&pool->deferred_bios, &bios);
 			spin_unlock_irqrestore(&pool->lock, flags);
+
 			break;
 		}
 
@@ -1354,8 +1349,7 @@ static void process_deferred_bios(struct pool *pool)
 	bio_list_init(&pool->deferred_flush_bios);
 	spin_unlock_irqrestore(&pool->lock, flags);
 
-	if (bio_list_empty(&bios) &&
-	    !(dm_pool_changed_this_transaction(pool->pmd) && need_commit_due_to_time(pool)))
+	if (bio_list_empty(&bios) && !need_commit_due_to_time(pool))
 		return;
 
 	if (commit(pool)) {
@@ -1396,16 +1390,16 @@ static enum pool_mode get_pool_mode(struct pool *pool)
 	return pool->pf.mode;
 }
 
-static void set_pool_mode(struct pool *pool, enum pool_mode new_mode)
+static void set_pool_mode(struct pool *pool, enum pool_mode mode)
 {
 	int r;
-	enum pool_mode old_mode = pool->pf.mode;
 
-	switch (new_mode) {
+	pool->pf.mode = mode;
+
+	switch (mode) {
 	case PM_FAIL:
-		if (old_mode != new_mode)
-			DMERR("%s: switching pool to failure mode",
-			      dm_device_name(pool->pool_md));
+		DMERR("%s: switching pool to failure mode",
+		      dm_device_name(pool->pool_md));
 		dm_pool_metadata_read_only(pool->pmd);
 		pool->process_bio = process_bio_fail;
 		pool->process_discard = process_bio_fail;
@@ -1414,15 +1408,13 @@ static void set_pool_mode(struct pool *pool, enum pool_mode new_mode)
 		break;
 
 	case PM_READ_ONLY:
-		if (old_mode != new_mode)
-			DMERR("%s: switching pool to read-only mode",
-			      dm_device_name(pool->pool_md));
+		DMERR("%s: switching pool to read-only mode",
+		      dm_device_name(pool->pool_md));
 		r = dm_pool_abort_metadata(pool->pmd);
 		if (r) {
 			DMERR("%s: aborting transaction failed",
 			      dm_device_name(pool->pool_md));
-			new_mode = PM_FAIL;
-			set_pool_mode(pool, new_mode);
+			set_pool_mode(pool, PM_FAIL);
 		} else {
 			dm_pool_metadata_read_only(pool->pmd);
 			pool->process_bio = process_bio_read_only;
@@ -1433,9 +1425,6 @@ static void set_pool_mode(struct pool *pool, enum pool_mode new_mode)
 		break;
 
 	case PM_WRITE:
-		if (old_mode != new_mode)
-			DMINFO("%s: switching pool to write mode",
-			       dm_device_name(pool->pool_md));
 		dm_pool_metadata_read_write(pool->pmd);
 		pool->process_bio = process_bio;
 		pool->process_discard = process_discard;
@@ -1443,8 +1432,6 @@ static void set_pool_mode(struct pool *pool, enum pool_mode new_mode)
 		pool->process_prepared_discard = process_prepared_discard;
 		break;
 	}
-
-	pool->pf.mode = new_mode;
 }
 
 /*----------------------------------------------------------------*/
@@ -1661,17 +1648,6 @@ static int bind_control_target(struct pool *pool, struct dm_target *ti)
 	enum pool_mode new_mode = pt->adjusted_pf.mode;
 
 	/*
-	 * Don't change the pool's mode until set_pool_mode() below.
-	 * Otherwise the pool's process_* function pointers may
-	 * not match the desired pool mode.
-	 */
-	pt->adjusted_pf.mode = old_mode;
-
-	pool->ti = ti;
-	pool->pf = pt->adjusted_pf;
-	pool->low_water_blocks = pt->low_water_blocks;
-
-	/*
 	 * If we were in PM_FAIL mode, rollback of metadata failed.  We're
 	 * not going to recover without a thin_repair.  So we never let the
 	 * pool move out of the old mode.  On the other hand a PM_READ_ONLY
@@ -1680,6 +1656,10 @@ static int bind_control_target(struct pool *pool, struct dm_target *ti)
 	 */
 	if (old_mode == PM_FAIL)
 		new_mode = old_mode;
+
+	pool->ti = ti;
+	pool->low_water_blocks = pt->low_water_blocks;
+	pool->pf = pt->adjusted_pf;
 
 	set_pool_mode(pool, new_mode);
 
@@ -2848,7 +2828,6 @@ static int thin_ctr(struct dm_target *ti, unsigned argc, char **argv)
 
 	if (get_pool_mode(tc->pool) == PM_FAIL) {
 		ti->error = "Couldn't open thin device, Pool is in fail mode";
-		r = -EINVAL;
 		goto bad_thin_open;
 	}
 
@@ -2860,7 +2839,7 @@ static int thin_ctr(struct dm_target *ti, unsigned argc, char **argv)
 
 	r = dm_set_target_max_io_len(ti, tc->pool->sectors_per_block);
 	if (r)
-		goto bad_target_max_io_len;
+		goto bad_thin_open;
 
 	ti->num_flush_bios = 1;
 	ti->flush_supported = true;
@@ -2881,8 +2860,6 @@ static int thin_ctr(struct dm_target *ti, unsigned argc, char **argv)
 
 	return 0;
 
-bad_target_max_io_len:
-	dm_pool_close_thin_device(tc->td);
 bad_thin_open:
 	__pool_dec(tc->pool);
 bad_pool_lookup:

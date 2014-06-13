@@ -19,6 +19,9 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/fb.h>
@@ -27,6 +30,7 @@
 #include <linux/platform_device.h>
 #include <linux/uaccess.h>
 #include <linux/pm_runtime.h>
+#include <linux/suspend.h>
 #include <linux/interrupt.h>
 #include <linux/wait.h>
 #include <linux/clk.h>
@@ -36,8 +40,15 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/lcm.h>
+#include <video/of_display_timing.h>
 #include <video/da8xx-fb.h>
+
+#ifdef CONFIG_FB_DA8XX_TDA998X
+#include <video/da8xx-tda998x-hdmi.h>
+#endif
+
 #include <asm/div64.h>
+
 
 #define DRIVER_NAME "da8xx_lcdc"
 
@@ -141,6 +152,33 @@ static irq_handler_t lcdc_irq_handler;
 static wait_queue_head_t frame_done_wq;
 static int frame_done_flag;
 
+static LIST_HEAD(encoder_modules);
+
+void da8xx_register_encoder(struct da8xx_encoder *encoder)
+{
+	INIT_LIST_HEAD(&encoder->list);
+	list_add(&encoder->list, &encoder_modules);
+}
+EXPORT_SYMBOL(da8xx_register_encoder);
+
+void da8xx_unregister_encoder(struct da8xx_encoder *encoder)
+{
+	list_del(&encoder->list);
+}
+EXPORT_SYMBOL(da8xx_unregister_encoder);
+
+
+static struct da8xx_encoder
+	*da8xx_get_encoder_from_phandle(struct device_node *node)
+{
+	struct da8xx_encoder *entry;
+	list_for_each_entry(entry, &encoder_modules, list)
+		if (entry->node == node)
+			return entry;
+
+	return NULL;
+}
+
 static unsigned int lcdc_read(unsigned int addr)
 {
 	return (unsigned int)__raw_readl(da8xx_fb_reg_base + (addr));
@@ -169,6 +207,9 @@ struct da8xx_fb_par {
 	int			vsync_timeout;
 	spinlock_t		lock_for_chan_update;
 
+	wait_queue_head_t	palette_wait;
+	int			palette_loaded_flag;
+
 	/*
 	 * LCDC has 2 ping pong DMA channels, channel 0
 	 * and channel 1.
@@ -182,6 +223,7 @@ struct da8xx_fb_par {
 	u32 pseudo_palette[16];
 	struct fb_videomode	mode;
 	struct lcd_ctrl_config	cfg;
+	struct device_node *hdmi_node;
 };
 
 static struct fb_var_screeninfo da8xx_fb_var;
@@ -196,6 +238,9 @@ static struct fb_fix_screeninfo da8xx_fb_fix = {
 	.ywrapstep = 0,
 	.accel = FB_ACCEL_NONE
 };
+
+static vsync_callback_t vsync_cb_handler;
+static void *vsync_cb_arg;
 
 static struct fb_videomode known_lcd_panels[] = {
 	/* Sharp LCD035Q3DG01 */
@@ -356,6 +401,24 @@ static void lcd_blit(int load_mode, struct da8xx_fb_par *par)
 	 * set.
 	 */
 	lcd_enable_raster();
+}
+
+static void lcd_load_palette(struct da8xx_fb_par *par)
+{
+	int r;
+
+	par->palette_loaded_flag = 0;
+
+	lcd_blit(LOAD_PALETTE, par);
+
+	r = wait_event_interruptible_timeout(par->palette_wait,
+					       par->palette_loaded_flag != 0,
+					       msecs_to_jiffies(50));
+
+	if (r == 0)
+		pr_err("LCDC timeout when loading palette\n");
+
+	lcd_blit(LOAD_DATA, par);
 }
 
 /* Configure the Burst Size and fifo threhold of DMA */
@@ -562,6 +625,11 @@ static int lcd_cfg_frame_buffer(struct da8xx_fb_par *par, u32 width, u32 height,
 
 	par->palette_sz = 16 * 2;
 
+	if (lcd_revision == LCD_VERSION_2) {
+		reg &= ~LCD_V2_TFT_24BPP_MODE;
+		reg &= ~LCD_V2_TFT_24BPP_UNPACK;
+	}
+
 	switch (bpp) {
 	case 1:
 	case 2:
@@ -681,7 +749,7 @@ static int fb_setcolreg(unsigned regno, unsigned red, unsigned green,
 
 	/* Update the palette in the h/w as needed. */
 	if (update_hw)
-		lcd_blit(LOAD_PALETTE, par);
+		lcd_load_palette(par);
 
 	return 0;
 }
@@ -730,8 +798,8 @@ static int da8xx_fb_config_clk_divider(struct da8xx_fb_par *par,
 }
 
 static unsigned int da8xx_fb_calc_clk_divider(struct da8xx_fb_par *par,
-					      unsigned pixclock,
-					      unsigned *lcdc_clk_rate)
+			      unsigned pixclock,
+			      unsigned *lcdc_clk_rate)
 {
 	unsigned lcdc_clk_div;
 
@@ -765,7 +833,7 @@ static int da8xx_fb_calc_config_clk_divider(struct da8xx_fb_par *par,
 }
 
 static unsigned da8xx_fb_round_clk(struct da8xx_fb_par *par,
-					  unsigned pixclock)
+				  unsigned pixclock)
 {
 	unsigned lcdc_clk_div, lcdc_clk_rate;
 
@@ -778,11 +846,48 @@ static int lcd_init(struct da8xx_fb_par *par, const struct lcd_ctrl_config *cfg,
 {
 	u32 bpp;
 	int ret = 0;
+	struct da8xx_encoder *enc = NULL;
 
-	ret = da8xx_fb_calc_config_clk_divider(par, panel);
-	if (IS_ERR_VALUE(ret)) {
-		dev_err(par->dev, "unable to configure clock\n");
-		return ret;
+	if (IS_ENABLED(CONFIG_FB_DA8XX_TDA998X) && par->hdmi_node) {
+		const unsigned clkdiv = 2; /* we use fixed div 2 */
+		unsigned long pixclock;
+
+		pixclock = PICOS2KHZ(panel->pixclock) * 1000;
+
+		pr_debug("target pixclock %d ps, %lu Hz\n",
+			panel->pixclock, pixclock);
+
+		ret = clk_set_rate(par->lcdc_clk, pixclock * clkdiv);
+		if (ret < 0) {
+			dev_err(par->dev,
+				"failed to set display clock rate to %lu: %d\n",
+				pixclock, ret);
+			return ret;
+		}
+
+		par->lcdc_clk_rate = clk_get_rate(par->lcdc_clk);
+		pixclock = par->lcdc_clk_rate / clkdiv;
+
+		pr_debug("lcd_clk=%u, pixclock=%lu, div=%u\n",
+			par->lcdc_clk_rate, pixclock, clkdiv);
+
+		/* Configure the LCD clock divisor. */
+		lcdc_write(LCD_CLK_DIVISOR(clkdiv) |
+			(LCD_RASTER_MODE & 0x1), LCD_CTRL_REG);
+
+		if (lcd_revision == LCD_VERSION_2)
+			lcdc_write(LCD_V2_DMA_CLK_EN | LCD_V2_LIDD_CLK_EN |
+				LCD_V2_CORE_CLK_EN, LCD_CLK_ENABLE_REG);
+	} else {
+		/*
+		 * Not using external encoder, using old and more inaccurate
+		 * method of setting the clocks.
+		 */
+		ret = da8xx_fb_calc_config_clk_divider(par, panel);
+		if (IS_ERR_VALUE(ret)) {
+			dev_err(par->dev, "unable to configure clock\n");
+			return ret;
+		}
 	}
 
 	if (panel->sync & FB_SYNC_CLK_INVERT)
@@ -818,12 +923,50 @@ static int lcd_init(struct da8xx_fb_par *par, const struct lcd_ctrl_config *cfg,
 	if (ret < 0)
 		return ret;
 
+	lcd_load_palette(par);
+
 	/* Configure FDD */
 	lcdc_write((lcdc_read(LCD_RASTER_CTRL_REG) & 0xfff00fff) |
 		       (cfg->fdd << 12), LCD_RASTER_CTRL_REG);
 
+	if (IS_ENABLED(CONFIG_FB_DA8XX_TDA998X) && par->hdmi_node) {
+		/*
+		 * keep doing this lookup, because there is a posibility that
+		 * somebody went and unloaded the encoder driver from out
+		 * beneath us
+		 */
+		enc = da8xx_get_encoder_from_phandle(par->hdmi_node);
+		if (enc)
+			enc->set_mode(enc, panel);
+	}
 	return 0;
 }
+
+int register_vsync_cb(vsync_callback_t handler, void *arg, int idx)
+{
+	if ((vsync_cb_handler == NULL) && (vsync_cb_arg == NULL)) {
+		vsync_cb_arg = arg;
+		vsync_cb_handler = handler;
+	} else {
+		return -EEXIST;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(register_vsync_cb);
+
+int unregister_vsync_cb(vsync_callback_t handler, void *arg, int idx)
+{
+	if ((vsync_cb_handler == handler) && (vsync_cb_arg == arg)) {
+		vsync_cb_handler = NULL;
+		vsync_cb_arg = NULL;
+	} else {
+		return -ENXIO;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(unregister_vsync_cb);
 
 /* IRQ handler for version 2 of LCDC */
 static irqreturn_t lcdc_irq_handler_rev02(int irq, void *arg)
@@ -849,8 +992,8 @@ static irqreturn_t lcdc_irq_handler_rev02(int irq, void *arg)
 		/* Disable PL completion interrupt */
 		lcdc_write(LCD_V2_PL_INT_ENA, LCD_INT_ENABLE_CLR_REG);
 
-		/* Setup and start data loading mode */
-		lcd_blit(LOAD_DATA, par);
+		par->palette_loaded_flag = 1;
+		wake_up_interruptible(&par->palette_wait);
 	} else {
 		lcdc_write(stat, LCD_MASKED_STAT_REG);
 
@@ -862,6 +1005,8 @@ static irqreturn_t lcdc_irq_handler_rev02(int irq, void *arg)
 				   LCD_DMA_FRM_BUF_CEILING_ADDR_0_REG);
 			par->vsync_flag = 1;
 			wake_up_interruptible(&par->vsync_wait);
+			if (vsync_cb_handler)
+				vsync_cb_handler(vsync_cb_arg);
 		}
 
 		if (stat & LCD_END_OF_FRAME1) {
@@ -872,6 +1017,8 @@ static irqreturn_t lcdc_irq_handler_rev02(int irq, void *arg)
 				   LCD_DMA_FRM_BUF_CEILING_ADDR_1_REG);
 			par->vsync_flag = 1;
 			wake_up_interruptible(&par->vsync_wait);
+			if (vsync_cb_handler)
+				vsync_cb_handler(vsync_cb_arg);
 		}
 
 		/* Set only when controller is disabled and at the end of
@@ -914,8 +1061,8 @@ static irqreturn_t lcdc_irq_handler_rev01(int irq, void *arg)
 		reg_ras &= ~LCD_V1_PL_INT_ENA;
 		lcdc_write(reg_ras, LCD_RASTER_CTRL_REG);
 
-		/* Setup and start data loading mode */
-		lcd_blit(LOAD_DATA, par);
+		par->palette_loaded_flag = 1;
+		wake_up_interruptible(&par->palette_wait);
 	} else {
 		lcdc_write(stat, LCD_STAT_REG);
 
@@ -1032,7 +1179,13 @@ static int fb_check_var(struct fb_var_screeninfo *var,
 	if (var->yres + var->yoffset > var->yres_virtual)
 		var->yoffset = var->yres_virtual - var->yres;
 
-	var->pixclock = da8xx_fb_round_clk(par, var->pixclock);
+	/*
+	 * if we don't have an encoder attached, use the legacy
+	 * clock setting code that works on da8xx but is a bit
+	 * inaccurate for the encoders on AM335x
+	 */
+	if (!IS_ENABLED(CONFIG_FB_DA8XX_TDA998X) || (par->hdmi_node == NULL))
+		var->pixclock = da8xx_fb_round_clk(par, var->pixclock);
 
 	return err;
 }
@@ -1152,7 +1305,7 @@ static int fb_ioctl(struct fb_info *info, unsigned int cmd,
 	case FBIPUT_COLOR:
 		return -ENOTTY;
 	case FBIPUT_HSYNC:
-		if (copy_from_user(&sync_arg, (char *)arg,
+		if (copy_from_user(&sync_arg, (void __user *)arg,
 				sizeof(struct lcd_sync_arg)))
 			return -EFAULT;
 		lcd_cfg_horizontal_sync(sync_arg.back_porch,
@@ -1160,7 +1313,7 @@ static int fb_ioctl(struct fb_info *info, unsigned int cmd,
 					sync_arg.front_porch);
 		break;
 	case FBIPUT_VSYNC:
-		if (copy_from_user(&sync_arg, (char *)arg,
+		if (copy_from_user(&sync_arg, (void __user *)arg,
 				sizeof(struct lcd_sync_arg)))
 			return -EFAULT;
 		lcd_cfg_vertical_sync(sync_arg.back_porch,
@@ -1312,11 +1465,53 @@ static struct fb_ops da8xx_fb_ops = {
 	.fb_blank = cfb_blank,
 };
 
+static struct lcd_ctrl_config *da8xx_fb_create_cfg(struct platform_device *dev)
+{
+	struct lcd_ctrl_config *cfg;
+
+	cfg = devm_kzalloc(&dev->dev, sizeof(struct fb_videomode), GFP_KERNEL);
+	if (!cfg)
+		return NULL;
+
+	/* default values */
+
+	if (lcd_revision == LCD_VERSION_1)
+		cfg->bpp = 16;
+	else
+		cfg->bpp = 32;
+
+	/*
+	 * For panels so far used with this LCDC, below statement is sufficient.
+	 * For new panels, if required, struct lcd_ctrl_cfg fields to be updated
+	 * with additional/modified values. Those values would have to be then
+	 * obtained from dt(requiring new dt bindings).
+	 */
+
+	cfg->panel_shade = COLOR_ACTIVE;
+
+	return cfg;
+}
+
 static struct fb_videomode *da8xx_fb_get_videomode(struct platform_device *dev)
 {
 	struct da8xx_lcdc_platform_data *fb_pdata = dev->dev.platform_data;
 	struct fb_videomode *lcdc_info;
+	struct device_node *np = dev->dev.of_node;
 	int i;
+
+	if (np) {
+		lcdc_info = devm_kzalloc(&dev->dev,
+					 sizeof(struct fb_videomode),
+					 GFP_KERNEL);
+		if (!lcdc_info)
+			return NULL;
+
+		if (of_get_fb_videomode(np, lcdc_info, OF_USE_NATIVE_MODE)) {
+			dev_err(&dev->dev, "timings not available in DT\n");
+			return NULL;
+		}
+		return lcdc_info;
+	}
 
 	for (i = 0, lcdc_info = known_lcd_panels;
 		i < ARRAY_SIZE(known_lcd_panels); i++, lcdc_info++) {
@@ -1345,10 +1540,23 @@ static int fb_probe(struct platform_device *device)
 	struct clk *tmp_lcdc_clk;
 	int ret;
 	unsigned long ulcm;
+	struct device_node *hdmi_node = NULL;
 
-	if (fb_pdata == NULL) {
+
+	if (fb_pdata == NULL && !device->dev.of_node) {
 		dev_err(&device->dev, "Can not get platform data\n");
 		return -ENOENT;
+	}
+
+	if (device->dev.of_node) {
+		hdmi_node = of_parse_phandle(device->dev.of_node,
+					"hdmi", 0);
+		if (hdmi_node &&
+			(da8xx_get_encoder_from_phandle(hdmi_node) == NULL)) {
+			/* i2c encoder has not initialized yet, defer */
+			of_node_put(hdmi_node);
+			return -EPROBE_DEFER;
+		}
 	}
 
 	lcdc_info = da8xx_fb_get_videomode(device);
@@ -1369,6 +1577,14 @@ static int fb_probe(struct platform_device *device)
 	pm_runtime_enable(&device->dev);
 	pm_runtime_get_sync(&device->dev);
 
+	/*
+	 * disable creation of new console during suspend.
+	 * this works around a problem where a ctrl-c is needed
+	 * to be entered on the VT to actually get the device
+	 * to continue into the suspend state.
+	 */
+	pm_set_vt_switch(0);
+
 	/* Determine LCD IP Version */
 	switch (lcdc_read(LCD_PID_REG)) {
 	case 0x4C100102:
@@ -1386,7 +1602,10 @@ static int fb_probe(struct platform_device *device)
 		break;
 	}
 
-	lcd_cfg = (struct lcd_ctrl_config *)fb_pdata->controller_data;
+	if (device->dev.of_node)
+		lcd_cfg = da8xx_fb_create_cfg(device);
+	else
+		lcd_cfg = fb_pdata->controller_data;
 
 	if (!lcd_cfg) {
 		ret = -EINVAL;
@@ -1405,10 +1624,14 @@ static int fb_probe(struct platform_device *device)
 	par->dev = &device->dev;
 	par->lcdc_clk = tmp_lcdc_clk;
 	par->lcdc_clk_rate = clk_get_rate(par->lcdc_clk);
-	if (fb_pdata->panel_power_ctrl) {
+
+	if (fb_pdata && fb_pdata->panel_power_ctrl) {
 		par->panel_power_ctrl = fb_pdata->panel_power_ctrl;
 		par->panel_power_ctrl(1);
 	}
+
+	if (device->dev.of_node)
+		par->hdmi_node = hdmi_node;
 
 	fb_videomode_to_var(&da8xx_fb_var, lcdc_info);
 	par->cfg = *lcd_cfg;
@@ -1461,6 +1684,18 @@ static int fb_probe(struct platform_device *device)
 		goto err_release_pl_mem;
 	}
 
+	if (lcd_revision == LCD_VERSION_1)
+		lcdc_irq_handler = lcdc_irq_handler_rev01;
+	else {
+		init_waitqueue_head(&frame_done_wq);
+		lcdc_irq_handler = lcdc_irq_handler_rev02;
+	}
+
+	ret = devm_request_irq(&device->dev, par->irq, lcdc_irq_handler, 0,
+			       DRIVER_NAME, par);
+	if (ret)
+		goto err_release_pl_mem;
+
 	da8xx_fb_var.grayscale =
 	    lcd_cfg->panel_shade == MONOCHROME ? 1 : 0;
 	da8xx_fb_var.bits_per_pixel = lcd_cfg->bpp;
@@ -1479,10 +1714,6 @@ static int fb_probe(struct platform_device *device)
 		goto err_release_pl_mem;
 	da8xx_fb_info->cmap.len = par->palette_sz;
 
-	/* initialize var_screeninfo */
-	da8xx_fb_var.activate = FB_ACTIVATE_FORCE;
-	fb_set_var(da8xx_fb_info, &da8xx_fb_var);
-
 	dev_set_drvdata(&device->dev, da8xx_fb_info);
 
 	/* initialize the vsync wait queue */
@@ -1490,6 +1721,12 @@ static int fb_probe(struct platform_device *device)
 	par->vsync_timeout = HZ / 5;
 	par->which_dma_channel_done = -1;
 	spin_lock_init(&par->lock_for_chan_update);
+
+	init_waitqueue_head(&par->palette_wait);
+
+	/* set var and par */
+	da8xx_fb_var.activate = FB_ACTIVATE_FORCE;
+	fb_set_var(da8xx_fb_info, &da8xx_fb_var);
 
 	/* Register the Frame Buffer  */
 	if (register_framebuffer(da8xx_fb_info) < 0) {
@@ -1507,22 +1744,9 @@ static int fb_probe(struct platform_device *device)
 	}
 #endif
 
-	if (lcd_revision == LCD_VERSION_1)
-		lcdc_irq_handler = lcdc_irq_handler_rev01;
-	else {
-		init_waitqueue_head(&frame_done_wq);
-		lcdc_irq_handler = lcdc_irq_handler_rev02;
-	}
-
-	ret = devm_request_irq(&device->dev, par->irq, lcdc_irq_handler, 0,
-			       DRIVER_NAME, par);
-	if (ret)
-		goto irq_freq;
 	return 0;
 
-irq_freq:
 #ifdef CONFIG_CPU_FREQ
-	lcd_da8xx_cpufreq_deregister(par);
 err_cpu_freq:
 #endif
 	unregister_framebuffer(da8xx_fb_info);
@@ -1548,7 +1772,7 @@ err_pm_runtime_disable:
 }
 
 #ifdef CONFIG_PM
-struct lcdc_context {
+static struct lcdc_context {
 	u32 clk_enable;
 	u32 ctrl;
 	u32 dma_ctrl;
@@ -1626,12 +1850,18 @@ static int fb_suspend(struct platform_device *dev, pm_message_t state)
 	pm_runtime_put_sync(&dev->dev);
 	console_unlock();
 
+	/* Select sleep pin state */
+	pinctrl_pm_select_sleep_state(&dev->dev);
+
 	return 0;
 }
 static int fb_resume(struct platform_device *dev)
 {
 	struct fb_info *info = platform_get_drvdata(dev);
 	struct da8xx_fb_par *par = info->par;
+
+	/* Select default pin state */
+	pinctrl_pm_select_default_state(&dev->dev);
 
 	console_lock();
 	pm_runtime_get_sync(&dev->dev);
@@ -1653,6 +1883,19 @@ static int fb_resume(struct platform_device *dev)
 #define fb_resume NULL
 #endif
 
+#if IS_ENABLED(CONFIG_OF)
+static const struct of_device_id da8xx_fb_of_match[] = {
+	/*
+	 * this driver supports version 1 and version 2 of the
+	 * Texas Instruments lcd controller (lcdc) hardware block
+	 */
+	{.compatible = "ti,da8xx-tilcdc", },
+	{.compatible = "ti,am33xx-tilcdc", },
+	{},
+};
+MODULE_DEVICE_TABLE(of, da8xx_fb_of_match);
+#endif
+
 static struct platform_driver da8xx_fb_driver = {
 	.probe = fb_probe,
 	.remove = fb_remove,
@@ -1661,6 +1904,7 @@ static struct platform_driver da8xx_fb_driver = {
 	.driver = {
 		   .name = DRIVER_NAME,
 		   .owner = THIS_MODULE,
+		   .of_match_table = of_match_ptr(da8xx_fb_of_match),
 		   },
 };
 

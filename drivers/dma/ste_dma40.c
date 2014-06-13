@@ -14,6 +14,7 @@
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
+#include <linux/log2.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
 #include <linux/err.h>
@@ -1640,7 +1641,6 @@ static void dma_tasklet(unsigned long data)
 	struct d40_chan *d40c = (struct d40_chan *) data;
 	struct d40_desc *d40d;
 	unsigned long flags;
-	bool callback_active;
 	dma_async_tx_callback callback;
 	void *callback_param;
 
@@ -1668,7 +1668,6 @@ static void dma_tasklet(unsigned long data)
 	}
 
 	/* Callback to client */
-	callback_active = !!(d40d->txd.flags & DMA_PREP_INTERRUPT);
 	callback = d40d->txd.callback;
 	callback_param = d40d->txd.callback_param;
 
@@ -1691,7 +1690,7 @@ static void dma_tasklet(unsigned long data)
 
 	spin_unlock_irqrestore(&d40c->lock, flags);
 
-	if (callback_active && callback)
+	if (callback && (d40d->txd.flags & DMA_PREP_INTERRUPT))
 		callback(callback_param);
 
 	return;
@@ -2798,8 +2797,8 @@ static int d40_set_runtime_config(struct dma_chan *chan,
 	    src_addr_width >  DMA_SLAVE_BUSWIDTH_8_BYTES   ||
 	    dst_addr_width <= DMA_SLAVE_BUSWIDTH_UNDEFINED ||
 	    dst_addr_width >  DMA_SLAVE_BUSWIDTH_8_BYTES   ||
-	    ((src_addr_width > 1) && (src_addr_width & 1)) ||
-	    ((dst_addr_width > 1) && (dst_addr_width & 1)))
+	    !is_power_of_2(src_addr_width) ||
+	    !is_power_of_2(dst_addr_width))
 		return -EINVAL;
 
 	cfg->src_info.data_width = src_addr_width;

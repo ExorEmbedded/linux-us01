@@ -227,6 +227,8 @@ enum omap_dss_output_id {
 	OMAP_DSS_OUTPUT_DSI2	= 1 << 4,
 	OMAP_DSS_OUTPUT_VENC	= 1 << 5,
 	OMAP_DSS_OUTPUT_HDMI	= 1 << 6,
+	OMAP_DSS_OUTPUT_DPI1	= 1 << 7,
+	OMAP_DSS_OUTPUT_DPI2	= 1 << 8,
 };
 
 /* RFBI */
@@ -319,6 +321,8 @@ enum omapdss_version {
 	OMAPDSS_VER_OMAP4430_ES2,	/* OMAP4430 ES2.0, 2.1, 2.2 */
 	OMAPDSS_VER_OMAP4,		/* All other OMAP4s */
 	OMAPDSS_VER_OMAP5,
+	OMAPDSS_VER_DRA7xx,
+	OMAPDSS_VER_AM43xx,
 };
 
 /* Board specific data */
@@ -961,6 +965,10 @@ int dispc_ovl_enable(enum omap_plane plane, bool enable);
 bool dispc_ovl_enabled(enum omap_plane plane);
 void dispc_ovl_set_channel_out(enum omap_plane plane,
 		enum omap_channel channel);
+void dispc_ovl_compute_fifo_thresholds(enum omap_plane plane,
+		u32 *fifo_low, u32 *fifo_high, bool use_fifomerge,
+		bool manual_update);
+void dispc_ovl_set_fifo_threshold(enum omap_plane plane, u32 low, u32 high);
 int dispc_ovl_setup(enum omap_plane plane, const struct omap_overlay_info *oi,
 		bool replication, const struct omap_video_timings *mgr_timings,
 		bool mem_to_mem);

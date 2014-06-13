@@ -30,6 +30,7 @@
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
 #include <linux/string.h>
+#include <linux/of.h>
 
 #include <video/omapdss.h>
 
@@ -64,6 +65,7 @@ static struct platform_device *dpi_get_dsidev(enum omap_channel channel)
 	case OMAPDSS_VER_OMAP34xx_ES3:
 	case OMAPDSS_VER_OMAP3630:
 	case OMAPDSS_VER_AM35xx:
+	case OMAPDSS_VER_AM43xx:
 		return NULL;
 
 	case OMAPDSS_VER_OMAP4430_ES1:
@@ -117,7 +119,7 @@ struct dpi_clk_calc_ctx {
 	/* outputs */
 
 	struct dsi_clock_info dsi_cinfo;
-	struct dss_clock_info dss_cinfo;
+	unsigned long long fck;
 	struct dispc_clock_info dispc_cinfo;
 };
 
@@ -184,12 +186,11 @@ static bool dpi_calc_pll_cb(int regn, int regm, unsigned long fint,
 			dpi_calc_hsdiv_cb, ctx);
 }
 
-static bool dpi_calc_dss_cb(int fckd, unsigned long fck, void *data)
+static bool dpi_calc_dss_cb(unsigned long fck, void *data)
 {
 	struct dpi_clk_calc_ctx *ctx = data;
 
-	ctx->dss_cinfo.fck = fck;
-	ctx->dss_cinfo.fck_div = fckd;
+	ctx->fck = fck;
 
 	return dispc_div_calc(fck, ctx->pck_min, ctx->pck_max,
 			dpi_calc_dispc_cb, ctx);
@@ -237,7 +238,7 @@ static bool dpi_dss_clk_calc(unsigned long pck, struct dpi_clk_calc_ctx *ctx)
 			ctx->pck_min = 0;
 		ctx->pck_max = pck + 1000 * i * i * i;
 
-		ok = dss_div_calc(ctx->pck_min, dpi_calc_dss_cb, ctx);
+		ok = dss_div_calc(pck, ctx->pck_min, dpi_calc_dss_cb, ctx);
 		if (ok)
 			return ok;
 	}
@@ -286,13 +287,13 @@ static int dpi_set_dispc_clk(unsigned long pck_req, unsigned long *fck,
 	if (!ok)
 		return -EINVAL;
 
-	r = dss_set_clock_div(&ctx.dss_cinfo);
+	r = dss_set_fck_rate(ctx.fck);
 	if (r)
 		return r;
 
 	dpi.mgr_config.clock_info = ctx.dispc_cinfo;
 
-	*fck = ctx.dss_cinfo.fck;
+	*fck = ctx.fck;
 	*lck_div = ctx.dispc_cinfo.lck_div;
 	*pck_div = ctx.dispc_cinfo.pck_div;
 
@@ -352,6 +353,8 @@ static int dpi_display_enable(struct omap_dss_device *dssdev)
 
 	mutex_lock(&dpi.lock);
 
+	pinctrl_pm_select_default_state(&dpi.pdev->dev);
+
 	if (dss_has_feature(FEAT_DPI_USES_VDDS_DSI) && !dpi.vdds_dsi_reg) {
 		DSSERR("no VDSS_DSI regulator\n");
 		r = -ENODEV;
@@ -374,7 +377,7 @@ static int dpi_display_enable(struct omap_dss_device *dssdev)
 	if (r)
 		goto err_get_dispc;
 
-	r = dss_dpi_select_source(out->manager->id);
+	r = dss_dpi_select_source(0, out->manager->id);
 	if (r)
 		goto err_src_sel;
 
@@ -420,6 +423,7 @@ err_get_dispc:
 err_reg_enable:
 err_no_out_mgr:
 err_no_reg:
+	pinctrl_pm_select_sleep_state(&dpi.pdev->dev);
 	mutex_unlock(&dpi.lock);
 	return r;
 }
@@ -442,6 +446,8 @@ static void dpi_display_disable(struct omap_dss_device *dssdev)
 
 	if (dss_has_feature(FEAT_DPI_USES_VDDS_DSI))
 		regulator_disable(dpi.vdds_dsi_reg);
+
+	pinctrl_pm_select_sleep_state(&dpi.pdev->dev);
 
 	mutex_unlock(&dpi.lock);
 }
@@ -495,7 +501,7 @@ static int dpi_check_timings(struct omap_dss_device *dssdev,
 		if (!ok)
 			return -EINVAL;
 
-		fck = ctx.dss_cinfo.fck;
+		fck = ctx.fck;
 	}
 
 	lck_div = ctx.dispc_cinfo.lck_div;
@@ -593,6 +599,7 @@ static enum omap_channel dpi_get_channel(void)
 	case OMAPDSS_VER_OMAP34xx_ES3:
 	case OMAPDSS_VER_OMAP3630:
 	case OMAPDSS_VER_AM35xx:
+	case OMAPDSS_VER_AM43xx:
 		return OMAP_DSS_CHANNEL_LCD;
 
 	case OMAPDSS_VER_OMAP4430_ES1:
@@ -708,12 +715,19 @@ static int __exit omap_dpi_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id dpi_of_match[] = {
+	{ .compatible = "ti,omap3-dpi", },
+	{ .compatible = "ti,omap4-dpi", },
+	{},
+};
+
 static struct platform_driver omap_dpi_driver = {
 	.probe		= omap_dpi_probe,
 	.remove         = __exit_p(omap_dpi_remove),
 	.driver         = {
 		.name   = "omapdss_dpi",
 		.owner  = THIS_MODULE,
+		.of_match_table = dpi_of_match,
 	},
 };
 
