@@ -2096,9 +2096,11 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	 * should use the block device creation/destruction hotplug
 	 * messages to tell when the card is present.
 	 */
-
-	snprintf(md->disk->disk_name, sizeof(md->disk->disk_name),
-		 "mmcblk%d%s", md->name_idx, subname ? subname : "");
+	#ifdef CONFIG_SOC_AM33XX
+	snprintf(md->disk->disk_name, sizeof(md->disk->disk_name),"mmcblk%d%s", card->host->index, subname ? subname : "");
+	#else
+	snprintf(md->disk->disk_name, sizeof(md->disk->disk_name),"mmcblk%d%s", md->name_idx, subname ? subname : "");
+	#endif
 
 	if (mmc_card_mmc(card))
 		blk_queue_logical_block_size(md->queue.queue,

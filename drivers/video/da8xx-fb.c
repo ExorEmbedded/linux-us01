@@ -48,6 +48,8 @@
 #endif
 
 #include <asm/div64.h>
+#include <linux/io.h>
+#include <linux/gpio.h>
 
 
 #define DRIVER_NAME "da8xx_lcdc"
@@ -1474,11 +1476,7 @@ static struct lcd_ctrl_config *da8xx_fb_create_cfg(struct platform_device *dev)
 		return NULL;
 
 	/* default values */
-
-	if (lcd_revision == LCD_VERSION_1)
-		cfg->bpp = 16;
-	else
-		cfg->bpp = 32;
+	cfg->bpp = 16;
 
 	/*
 	 * For panels so far used with this LCDC, below statement is sufficient.
@@ -1541,6 +1539,23 @@ static int fb_probe(struct platform_device *device)
 	int ret;
 	unsigned long ulcm;
 	struct device_node *hdmi_node = NULL;
+
+#ifdef CONFIG_SOC_AM33XX	
+	/* HACK: Statically enable the display on HSE03 and ECO carriers
+	*/
+	int r;
+	printk(KERN_ERR "!!!!!!!!!!!!!!!! TURN ON DISPLAY\n");
+	r=gpio_request(61,"en_vdd");
+	if (r)
+	  printk(KERN_ERR "!!!! failed to get en_vdd pin\n");
+ 	
+	gpio_direction_output(61,1);
+	
+	r=gpio_request(64,"en_bl");
+	if (r)
+	  printk(KERN_ERR "!!!! failed to get en_bl pin\n");
+	gpio_direction_output(64,1);
+#endif
 
 
 	if (fb_pdata == NULL && !device->dev.of_node) {
