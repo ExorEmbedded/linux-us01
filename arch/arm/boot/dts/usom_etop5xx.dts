@@ -10,7 +10,7 @@
 #include "am33xx.dtsi"
 
 / {
-	model = "TI AM335x EVM";
+	model = "usom_etop5xx";
 	compatible = "ti,am335x-evm", "ti,am33xx";
 
 	cpus {
@@ -26,7 +26,7 @@
 
 	am33xx_pinmux: pinmux@44e10800 {
 		pinctrl-names = "default";
-		pinctrl-0 = <&clkout2_pin &wlan_pins>;
+		pinctrl-0 = <&clkout2_pin>;
 
 		i2c0_pins: pinmux_i2c0_pins {
 			pinctrl-single,pins = <
@@ -223,32 +223,6 @@
 			>;
 		};
 
-		mcasp1_pins: mcasp1_pins {
-			pinctrl-single,pins = <
-				0x10c (PIN_INPUT_PULLDOWN | MUX_MODE4) /* mii1_crs.mcasp1_aclkx */
-				0x110 (PIN_INPUT_PULLDOWN | MUX_MODE4) /* mii1_rxerr.mcasp1_fsx */
-				0x108 (PIN_OUTPUT_PULLDOWN | MUX_MODE4) /* mii1_col.mcasp1_axr2 */
-				0x144 (PIN_INPUT_PULLDOWN | MUX_MODE4) /* rmii1_ref_clk.mcasp1_axr3 */
-			>;
-		};
-
-		mcasp1_sleep_pins: mcasp1_sleep_pins {
-			pinctrl-single,pins = <
-				0x10c (PIN_INPUT_PULLDOWN | MUX_MODE7)
-				0x110 (PIN_INPUT_PULLDOWN | MUX_MODE7)
-				0x108 (PIN_INPUT_PULLDOWN | MUX_MODE7)
-				0x144 (PIN_INPUT_PULLDOWN | MUX_MODE7)
-			>;
-		};
-
-		/* wl12xx/wl18xx card enable/irq GPIOs. */
-		wlan_pins: pinmux_wlan_pins {
-			pinctrl-single,pins = <
-				0x40 0x07	/* gpmc_a0.gpio1_16, OUTPUT | MODE7 */
-				0x19C 0x27	/* mcasp0_ahclkr.gpio3_17, INPUT | MODE7 */
-				0x1AC 0x17	/* mcasp0_ahclkx.gpio3_21, OUTPUT_PULLUP | MODE7 */
-			>;
-		};
 	};
 
 	ocp {
@@ -282,6 +256,16 @@
 			wake-sequence = /bits/ 8 <
 				0x02 0x2d 0x25 0x2b /* Set VDD2 to 1.1V */
 			>;
+
+			seeprom@54 {
+				compatible = "atmel,24c02";
+				reg = <0x54>;
+			};
+
+			m41t83@68 {
+				compatible = "stm,m41t80";
+				reg = <0x68>;
+			};
 
 			tps: tps@2d {
 				reg = <0x2d>;
@@ -363,25 +347,6 @@
 		regulator-boot-on;
 	};
 
-	lis3_reg: fixedregulator@1 {
-		compatible = "regulator-fixed";
-		regulator-name = "lis3_reg";
-		regulator-boot-on;
-	};
-
-	wlan_en_reg: fixedregulator@2 {
-		compatible = "regulator-fixed";
-		regulator-name = "wlan-en-regulator";
-		regulator-min-microvolt = <1800000>;
-		regulator-max-microvolt = <1800000>;
-
-		/* WLAN_EN GPIO for this board - Bank1, pin16 */
-		gpio = <&gpio1 16 0>;
-
-		/* WLAN card specific delay */
-		startup-delay-us = <70000>;
-		enable-active-high;
-	};
 
 	backlight {
 		compatible = "pwm-backlight";
@@ -399,7 +364,7 @@
 			ac-bias           = <255>;
 			ac-bias-intrpt    = <0>;
 			dma-burst-sz      = <16>;
-			bpp               = <32>;
+			bpp               = <16>;
 			fdd               = <0x80>;
 			sync-edge         = <0>;
 			sync-ctrl         = <1>;
@@ -424,54 +389,9 @@
 		};
 	};
 
-	wlcore {
-		compatible = "wlcore";
-		gpio = <113>; /* Bank3, pin17 */
-
-		/*
-		 * TODO: use edge irqs for suspend/resume.
-		 * in newer kerenls, we seem to miss interrupts when
-		 * working with edge irqs, so revert back to level irqs.
-		 */
-		 /* platform-quirks = <1>; */
-
-		/* if a 12xx card is there, configure the clock to
-		   WL12XX_REFCLOCK_38_XTAL */
-		board-ref-clock = <4>;
-	};
-
-	kim {
-		compatible = "kim";
-		nshutdown_gpio = <117>; /* Bank3, pin21 */
-		dev_name = "/dev/ttyO1";
-		flow_cntrl = <1>;
-		baud_rate = <3000000>;
-	};
-
-	btwilink {
-		compatible = "btwilink";
-	};
-
 };
 
 #include "tps65910.dtsi"
-
-&mcasp1 {
-		pinctrl-names = "default", "sleep";
-		pinctrl-0 = <&mcasp1_pins>;
-		pinctrl-1 = <&mcasp1_sleep_pins>;
-
-		status = "okay";
-
-		op-mode = <0>;          /* MCASP_IIS_MODE */
-		tdm-slots = <2>;
-		/* 16 serializer */
-		serial-dir = <  /* 0: INACTIVE, 1: TX, 2: RX */
-			0 0 1 2
-		>;
-		tx-num-evt = <32>;
-		rx-num-evt = <32>;
-};
 
 &tps {
 	vcc1-supply = <&vbat>;
@@ -573,6 +493,9 @@
   phy-mode = "rmii";
 };
 
+&phy_sel {
+	rmii-clock-ext;
+};
 
 &tscadc {
 	tsc {
