@@ -26,7 +26,7 @@
 
 	am33xx_pinmux: pinmux@44e10800 {
 		pinctrl-names = "default";
-		pinctrl-0 = <&clkout2_pin>;
+		pinctrl-0 = <&clkout2_pin &lcd_pins_enable &tsc2004_intr>;
 
 		i2c0_pins: pinmux_i2c0_pins {
 			pinctrl-single,pins = <
@@ -154,6 +154,19 @@
 		  0x0c (PIN_INPUT_PULLUP | MUX_MODE1) /* gpmc_ad3.mmc1_dat3 */
 		  >;
 		};
+
+		lcd_pins_enable: pinmux_lcd_pins_enable {
+		  	pinctrl-single,pins = <
+		  		0x7c 0x07	/* gpmc_csn0: EN_VDD / gpio1_29 OUTPUT | MODE7 */
+		  		0x88 0x07	/* gpmc_csn3: EN_BL / gpio2_0 OUTPUT | MODE7 */
+		  	>;
+		};
+
+		tsc2004_intr: pinmux_tsc2004_intr {
+		  pinctrl-single,pins = <
+		  0x1b0 0x77	/* xdma_event_intr0: TOUCH_INT / gpio0_19 INPUT | MODE7 | PULLUP | SLOW */
+		  >;
+		};
 		
 		lcd_pins_default: lcd_pins_default {
 			pinctrl-single,pins = <
@@ -185,8 +198,6 @@
 				0xe4 0x00	/* lcd_hsync.lcd_hsync, OUTPUT | MODE0 */
 				0xe8 0x00	/* lcd_pclk.lcd_pclk, OUTPUT | MODE0 */
 				0xec 0x00	/* lcd_ac_bias_en.lcd_ac_bias_en, OUTPUT | MODE0 */
-				0x7c 0x07	/* gpmc_csn0: EN_VDD / gpio1_29 OUTPUT | MODE7 */
-				0x88 0x07	/* gpmc_csn3: EN_BL / gpio2_0 OUTPUT | MODE7 */
 				>;
 		};
 
@@ -269,6 +280,12 @@
 
 			tps: tps@2d {
 				reg = <0x2d>;
+			};
+
+			touch: touch@4b {
+			  compatible = "tsc2004";
+			  reg = <0x4b>;
+			  gpios = <&gpio1 19 0>; /* GPIO 0_19 as intr pin input */
 			};
 		};
 
