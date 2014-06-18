@@ -42,6 +42,8 @@
 #include <linux/lcm.h>
 #include <video/of_display_timing.h>
 #include <video/da8xx-fb.h>
+#include <video/displayconfig.h>
+#include <linux/init.h> 
 
 #ifdef CONFIG_FB_DA8XX_TDA998X
 #include <video/da8xx-tda998x-hdmi.h>
@@ -153,6 +155,88 @@ static unsigned int lcd_revision;
 static irq_handler_t lcdc_irq_handler;
 static wait_queue_head_t frame_done_wq;
 static int frame_done_flag;
+
+/*----------------------------------------------------------------------------------------------------------------*
+   Helper functions to retrieve the display id value, when passed from the cmdline, and use it to set the
+   display parameters/timings (the contents of the DTB file are overridden, if a valid dispaly id is passed from
+   cmdline.
+ *----------------------------------------------------------------------------------------------------------------*/
+static int hw_dispid = NODISPLAY; //This variable will hold the display id value, when passed from the cmdline
+
+static int __init getdispid(char* str)
+{
+  hw_dispid = simple_strtol(str, NULL, 0);
+  return 1;
+}
+__setup("hw_dispid=",getdispid);
+
+/*
+ * Writes the fb_videomode structure according with the contents of the displayconfig.h file and the passed dispid parameter.
+ * Returns 0 if success, -1 if failure (ie: no match found)
+ */
+int dispid_get_fb_videomode(struct fb_videomode *fbmode, int dispid)
+{
+  int i=0;
+  unsigned int htotal, vtotal;
+  
+  // Scan the display array to search for the required dispid
+  if(dispid == NODISPLAY)
+    return -1;
+  
+  while((displayconfig[i].dispid != NODISPLAY) && (displayconfig[i].dispid != dispid))
+    i++;
+  
+  if(displayconfig[i].dispid == NODISPLAY)
+    return -1;
+  
+  // If we are here, we have a valid array index pointing to the desired display
+  fbmode->xres         = displayconfig[i].rezx;
+  fbmode->left_margin  = displayconfig[i].hs_bp;     
+  fbmode->right_margin = displayconfig[i].hs_fp;
+  fbmode->hsync_len    = displayconfig[i].hs_w;
+  
+  fbmode->yres         = displayconfig[i].rezy;
+  fbmode->upper_margin = displayconfig[i].vs_bp;
+  fbmode->lower_margin = displayconfig[i].vs_fp;
+  fbmode->vsync_len    = displayconfig[i].vs_w;
+
+  /* prevent division by zero in KHZ2PICOS macro */
+  fbmode->pixclock = displayconfig[i].pclk_freq ? KHZ2PICOS(displayconfig[i].pclk_freq) : 0;
+  
+  fbmode->sync = 0;
+  fbmode->vmode = 0;
+  
+  if(displayconfig[i].hs_inv == 0)
+    fbmode->sync |= FB_SYNC_HOR_HIGH_ACT;
+
+  if(displayconfig[i].vs_inv == 0)
+    fbmode->sync |= FB_SYNC_VERT_HIGH_ACT;
+  
+  if(displayconfig[i].pclk_inv == 1)
+    fbmode->sync |= FB_SYNC_CLK_INVERT;
+  
+  fbmode->flag = 0;
+  
+  htotal = displayconfig[i].rezx + displayconfig[i].hs_bp + displayconfig[i].hs_fp + displayconfig[i].hs_w;
+  vtotal = displayconfig[i].rezy + displayconfig[i].vs_bp + displayconfig[i].vs_fp + displayconfig[i].vs_w;
+
+  /* prevent division by zero */
+  if (htotal && vtotal) 
+  {
+    fbmode->refresh = displayconfig[i].pclk_freq / (htotal * vtotal);
+    /* a mode must have htotal and vtotal != 0 or it is invalid */
+  } 
+  else 
+  {
+    fbmode->refresh = 0;
+    return -EINVAL;
+  }
+  
+  return 0;
+}
+
+/*----------------------------------------------------------------------------------------------------------------*
+ *----------------------------------------------------------------------------------------------------------------*/
 
 static LIST_HEAD(encoder_modules);
 
@@ -1503,6 +1587,11 @@ static struct fb_videomode *da8xx_fb_get_videomode(struct platform_device *dev)
 					 GFP_KERNEL);
 		if (!lcdc_info)
 			return NULL;
+		
+		if(!dispid_get_fb_videomode(lcdc_info, hw_dispid))
+		{
+		  return lcdc_info;
+		}
 
 		if (of_get_fb_videomode(np, lcdc_info, OF_USE_NATIVE_MODE)) {
 			dev_err(&dev->dev, "timings not available in DT\n");
