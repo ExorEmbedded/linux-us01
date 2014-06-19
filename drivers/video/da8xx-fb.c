@@ -1633,17 +1633,10 @@ static int fb_probe(struct platform_device *device)
 	/* HACK: Statically enable the display on HSE03 and ECO carriers
 	*/
 	int r;
-	printk(KERN_ERR "!!!!!!!!!!!!!!!! TURN ON DISPLAY\n");
 	r=gpio_request(61,"en_vdd");
 	if (r)
 	  printk(KERN_ERR "!!!! failed to get en_vdd pin\n");
- 	
 	gpio_direction_output(61,1);
-	
-	r=gpio_request(64,"en_bl");
-	if (r)
-	  printk(KERN_ERR "!!!! failed to get en_bl pin\n");
-	gpio_direction_output(64,1);
 #endif
 
 

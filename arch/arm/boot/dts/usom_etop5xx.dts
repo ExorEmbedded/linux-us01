@@ -285,7 +285,7 @@
 			touch: touch@4b {
 			  compatible = "tsc2004";
 			  reg = <0x4b>;
-			  gpios = <&gpio1 19 0>; /* GPIO 0_19 as intr pin input */
+			  gpios = <&gpio0 19 0>; /* GPIO 0_19 as intr pin input */
 			};
 		};
 
@@ -371,8 +371,9 @@
 		pwms = <&ecap0 0 50000 0>;
 		brightness-levels = <0 51 53 56 62 75 101 152 255>;
 		default-brightness-level = <8>;
+		enable-gpios = <&gpio2 0 0>;
 	};
-
+	
 	panel {
 		compatible = "ti,tilcdc,panel";
 		status = "okay";
