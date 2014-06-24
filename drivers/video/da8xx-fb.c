@@ -161,14 +161,7 @@ static int frame_done_flag;
    display parameters/timings (the contents of the DTB file are overridden, if a valid dispaly id is passed from
    cmdline.
  *----------------------------------------------------------------------------------------------------------------*/
-static int hw_dispid = NODISPLAY; //This variable will hold the display id value, when passed from the cmdline
-
-static int __init getdispid(char* str)
-{
-  hw_dispid = simple_strtol(str, NULL, 0);
-  return 1;
-}
-__setup("hw_dispid=",getdispid);
+extern int hw_dispid; //This is an exported variable holding the display id value, if passed from cmdline
 
 /*
  * Writes the fb_videomode structure according with the contents of the displayconfig.h file and the passed dispid parameter.

@@ -273,6 +273,11 @@
 				reg = <0x54>;
 			};
 
+			seeprom@56 {
+			  compatible = "atmel,24c02";
+			  reg = <0x56>;
+			};
+			
 			m41t83@68 {
 				compatible = "stm,m41t80";
 				reg = <0x68>;
@@ -369,8 +374,8 @@
 	backlight {
 		compatible = "pwm-backlight";
 		pwms = <&ecap0 0 50000 0>;
-		brightness-levels = <0 51 53 56 62 75 101 152 255>;
-		default-brightness-level = <8>;
+		brightness-levels = <0 4 8 12 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76 80 84 88 92 96 100>;
+		default-brightness-level = <25>;
 		enable-gpios = <&gpio2 0 0>;
 	};
 	

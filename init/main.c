@@ -136,6 +136,19 @@ static char *static_command_line;
 static char *execute_command;
 static char *ramdisk_execute_command;
 
+/*----------------------------------------------------------------------------------------------------------------*
+Export the hw_dispid variable, defining the display id if passed from cmdline.
+*----------------------------------------------------------------------------------------------------------------*/
+int hw_dispid = 0xFFFF; //This variable will hold the display id value, when passed from the cmdline
+EXPORT_SYMBOL(hw_dispid);
+
+static int __init getdispid(char* str)
+{
+  hw_dispid = simple_strtol(str, NULL, 0);
+  return 1;
+}
+__setup("hw_dispid=",getdispid);
+
 /*
  * If set, this is an indication to the drivers that reset the underlying
  * device before going ahead with the initialization otherwise driver might
