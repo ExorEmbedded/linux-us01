@@ -26,7 +26,7 @@
 
 	am33xx_pinmux: pinmux@44e10800 {
 		pinctrl-names = "default";
-		pinctrl-0 = <&clkout2_pin &lcd_pins_enable &tsc2004_intr>;
+		pinctrl-0 = <&clkout2_pin &lcd_pins_enable &tsc2004_intr &phyuart_ctrl_pins>;
 
 		i2c0_pins: pinmux_i2c0_pins {
 			pinctrl-single,pins = <
@@ -167,6 +167,13 @@
 		  0x1b0 0x77	/* xdma_event_intr0: TOUCH_INT / gpio0_19 INPUT | MODE7 | PULLUP | SLOW */
 		  >;
 		};
+
+		phyuart_ctrl_pins: pinmux_phyuart_ctrl_pins {
+		  pinctrl-single,pins = <
+		  0x1c 0x2f	/* gpmc_ad7: mode_rs485/rs232* / gpio1_7 IN/OUT | MODE7 */
+		  0x18 0x2f	/* gpmc_ad6: dxen              / gpio1_6 IN/OUT | MODE7 */
+		  >;
+		};
 		
 		lcd_pins_default: lcd_pins_default {
 			pinctrl-single,pins = <
@@ -240,6 +247,9 @@
 		uart0: serial@44e09000 {
 			pinctrl-names = "default";
 			pinctrl-0 = <&uart0_pins>;
+			rts-gpio = <&gpio1 6 0>;
+			mode-gpio = <&gpio1 7 0>;
+			rs485-rts-active-high;
 
 			status = "okay";
 		};

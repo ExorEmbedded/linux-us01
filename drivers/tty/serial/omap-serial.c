@@ -167,6 +167,7 @@ struct uart_omap_port {
 
 	struct serial_rs485	rs485;
 	int			rts_gpio;
+	int 			mode_gpio;    /* If a valid gpio is mapped here, it means we have a programmable RS485/RS232 phy */
 
 	struct pm_qos_request	pm_qos_request;
 	u32			latency;
@@ -385,7 +386,8 @@ static void serial_omap_start_tx(struct uart_port *port)
 	pm_runtime_get_sync(up->dev);
 
 	/* handle rs485 */
-	if (up->rs485.flags & SER_RS485_ENABLED) {
+	if (up->rs485.flags & SER_RS485_ENABLED)
+	{
 		/* if rts not already enabled */
 		res = (up->rs485.flags & SER_RS485_RTS_ON_SEND) ? 1 : 0;
 		if (gpio_get_value(up->rts_gpio) != res) {
@@ -394,6 +396,21 @@ static void serial_omap_start_tx(struct uart_port *port)
 				mdelay(up->rs485.delay_rts_before_send);
 			}
 		}
+	}
+	else
+	{
+	  /*
+	  * If we are in RS232 mode and we have a programmable phy, enable the TX if not yet done.
+	  */
+	  if (gpio_is_valid(up->mode_gpio)) 
+	    if (gpio_is_valid(up->rts_gpio))
+	    {
+	      res = (up->rs485.flags & SER_RS485_RTS_ON_SEND) ? 1 : 0;
+	      if (gpio_get_value(up->rts_gpio) != res)
+	      {
+		gpio_set_value(up->rts_gpio, res);
+	      }
+	    }
 	}
 
 	if ((up->rs485.flags & SER_RS485_ENABLED) &&
@@ -1348,6 +1365,17 @@ serial_omap_config_rs485(struct uart_port *port, struct serial_rs485 *rs485conf)
 		gpio_set_value(up->rts_gpio, val);
 	} else
 		up->rs485.flags &= ~SER_RS485_ENABLED;
+	
+	/*
+	 * If we have a programmable phy, set the mode accordingly
+	 */
+	if (gpio_is_valid(up->mode_gpio)) 
+	{
+	  if(up->rs485.flags & SER_RS485_ENABLED)
+	    gpio_set_value(up->mode_gpio, 1);
+	  else
+	    gpio_set_value(up->mode_gpio, 0);
+	}
 
 	/* Enable interrupts */
 	up->ier = mode;
@@ -1546,14 +1574,17 @@ static int serial_omap_probe_rs485(struct uart_omap_port *up,
 
 	rs485conf->flags = 0;
 	up->rts_gpio = -EINVAL;
+	up->mode_gpio = -EINVAL;
 
 	if (!np)
 		return 0;
 
 	if (of_property_read_bool(np, "rs485-rts-active-high"))
-		rs485conf->flags |= SER_RS485_RTS_ON_SEND;
+	{
+	  rs485conf->flags |= SER_RS485_RTS_ON_SEND;
+	}
 	else
-		rs485conf->flags |= SER_RS485_RTS_AFTER_SEND;
+	  rs485conf->flags |= SER_RS485_RTS_AFTER_SEND;
 
 	/* check for tx enable gpio */
 	up->rts_gpio = of_get_named_gpio_flags(np, "rts-gpio", 0, &flags);
@@ -1567,6 +1598,20 @@ static int serial_omap_probe_rs485(struct uart_omap_port *up,
 			return ret;
 	} else
 		up->rts_gpio = -EINVAL;
+	
+	/* check for mode gpio, which is used to switch from RS485 <-> RS232 on programmable phys */
+	up->mode_gpio = of_get_named_gpio(np, "mode-gpio", 0);
+	if (gpio_is_valid(up->mode_gpio)) 
+	{
+	  ret = gpio_request(up->mode_gpio, "omap-serial");
+	  if (ret < 0)
+	    return ret;
+	  ret = gpio_direction_output(up->mode_gpio,0);
+	  if (ret < 0)
+	    return ret;
+	} 
+	else
+	  up->mode_gpio = -EINVAL;
 
 	if (of_property_read_u32_array(np, "rs485-rts-delay",
 				    rs485_delay, 2) == 0) {
@@ -1578,7 +1623,11 @@ static int serial_omap_probe_rs485(struct uart_omap_port *up,
 		rs485conf->flags |= SER_RS485_RX_DURING_TX;
 
 	if (of_property_read_bool(np, "linux,rs485-enabled-at-boot-time"))
+	{
 		rs485conf->flags |= SER_RS485_ENABLED;
+		if (gpio_is_valid(up->mode_gpio)) 
+		  gpio_set_value(up->mode_gpio, 1);
+	}
 
 	return 0;
 }
