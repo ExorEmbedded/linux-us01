@@ -279,7 +279,7 @@
 			};
 			
 			m41t83@68 {
-				compatible = "stm,m41t80";
+				compatible = "stm,m41t83";
 				reg = <0x68>;
 			};
 
