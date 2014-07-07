@@ -65,7 +65,7 @@ static struct t_DisplayParams displayconfig[] = {
         .blank_inv      = 0,
         
         .pwmfreq        = 10000,
-        .brightness_min = 5,
+        .brightness_min = 1,
         .brightness_max = 50,
     },
     /* 31: Evervision VGG804806_HSE03_PWM 800x480*/
@@ -91,7 +91,7 @@ static struct t_DisplayParams displayconfig[] = {
         .blank_inv      = 0,
         
         .pwmfreq        = 10000,
-        .brightness_min = 5,
+        .brightness_min = 1,
         .brightness_max = 60,
     },
     /* 32: CHIMEI TG070Y2-L01 800x480*/
@@ -169,7 +169,7 @@ static struct t_DisplayParams displayconfig[] = {
         .blank_inv      = 0,
         
         .pwmfreq        = 10000,
-        .brightness_min = 5,
+        .brightness_min = 1,
         .brightness_max = 60,
     },
     /* 38: AUO G121SN01V4 800x600*/
@@ -247,7 +247,7 @@ static struct t_DisplayParams displayconfig[] = {
         .blank_inv      = 0,
         
         .pwmfreq        = 10000,
-        .brightness_min = 5,
+        .brightness_min = 1,
         .brightness_max = 100,
     },
     /* 41: Chimei G133IGE-L03 1280x800*/
@@ -325,7 +325,7 @@ static struct t_DisplayParams displayconfig[] = {
         .blank_inv      = 0,
         
         .pwmfreq        = 10000,
-        .brightness_min = 5,
+        .brightness_min = 1,
         .brightness_max = 60,
     },
     /* 44: Tianma TM043NBH02 480x272*/
@@ -351,7 +351,7 @@ static struct t_DisplayParams displayconfig[] = {
         .blank_inv      = 0,
         
         .pwmfreq        = 10000,
-        .brightness_min = 5,
+        .brightness_min = 1,
         .brightness_max = 50,
     },
     /* 45: AGL VM15B2 V4 1024x768 15" */
@@ -403,7 +403,7 @@ static struct t_DisplayParams displayconfig[] = {
       .blank_inv      = 0,
       
       .pwmfreq        = 10000,
-      .brightness_min = 5,
+      .brightness_min = 1,
       .brightness_max = 80,
     },
     /* 47: AUO G101EVN01.0 1280x800 */
@@ -455,7 +455,7 @@ static struct t_DisplayParams displayconfig[] = {
       .blank_inv      = 0,
       
       .pwmfreq        = 10000,
-      .brightness_min = 5,
+      .brightness_min = 1,
       .brightness_max = 100,
     },        
     /* END OF LIST */
