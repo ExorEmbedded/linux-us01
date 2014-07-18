@@ -99,7 +99,7 @@
 /* Charge delay */
 #define CHARGEDLY_OPEN_MASK	(0x3FFFF << 0)
 #define CHARGEDLY_OPEN(val)	((val) << 0)
-#define CHARGEDLY_OPENDLY	CHARGEDLY_OPEN(1)
+#define CHARGEDLY_OPENDLY	CHARGEDLY_OPEN(0x098)
 
 /* Control register */
 #define CNTRLREG_TSCSSENB	BIT(0)
@@ -116,6 +116,9 @@
 /* FIFO READ Register */
 #define FIFOREAD_DATA_MASK (0xfff << 0)
 #define FIFOREAD_CHNLID_MASK (0xf << 16)
+
+/* CLKDIV Register */
+#define CLKDIV_DEFAULT 		(0x18)
 
 /* Sequencer Status */
 #define SEQ_STATUS BIT(5)

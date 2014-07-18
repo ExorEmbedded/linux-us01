@@ -248,6 +248,7 @@ static void titsc_read_coordinates(struct titsc *ts_dev,
 			*z2 = read;
 		}
 	}
+	// printk("prev_diff_x=%d prev_diff_y=%d fifocount=%d z1=%d z2=%d, x=%d, y=%d\n",prev_diff_x,prev_diff_y,fifocount,*z1,*z2,*x,*y); 
 }
 
 static irqreturn_t titsc_irq(int irq, void *dev)
@@ -256,13 +257,20 @@ static irqreturn_t titsc_irq(int irq, void *dev)
 	struct input_dev *input_dev = ts_dev->input;
 	unsigned int status, irqclr = 0;
 	unsigned int x = 0, y = 0;
-	unsigned int z1, z2, z;
+	unsigned int z1, z2, z, tmp;
 	unsigned int fsm;
 
 	status = titsc_readl(ts_dev, REG_IRQSTATUS);
 	if (status & IRQENB_FIFO0THRES) {
 
 		titsc_read_coordinates(ts_dev, &x, &y, &z1, &z2);
+		
+		if(z2 > z1)
+		{ //z1 needs to be greater than z2
+		  tmp = z1;
+		  z1 = z2;
+		  z2 = tmp;
+		}
 
 		if (ts_dev->pen_down && z1 != 0 && z2 != 0) {
 			/*
@@ -412,6 +420,8 @@ static int titsc_probe(struct platform_device *pdev)
 	titsc_writel(ts_dev, REG_FIFO0THR,
 			ts_dev->coordinate_readouts * 2 + 2 - 1);
 
+	titsc_writel(ts_dev, REG_CLKDIV, CLKDIV_DEFAULT);
+			
 	input_dev->name = "ti-tsc";
 	input_dev->dev.parent = &pdev->dev;
 
@@ -490,6 +500,8 @@ static int titsc_resume(struct device *dev)
 	titsc_step_config(ts_dev);
 	titsc_writel(ts_dev, REG_FIFO0THR,
 			ts_dev->coordinate_readouts * 2 + 2 - 1);
+			
+	titsc_writel(ts_dev, REG_CLKDIV, CLKDIV_DEFAULT);
 	return 0;
 }
 
