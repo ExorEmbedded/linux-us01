@@ -384,6 +384,10 @@
 	  ti,timers = <&timer6>;
 	  #pwm-cells = <3>;
 	};
+
+	working_hours {
+	  compatible = "working_hours";
+	};
 	
 	beeper {
 	  compatible = "pwm-beeper";

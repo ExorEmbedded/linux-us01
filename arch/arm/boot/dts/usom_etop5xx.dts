@@ -406,6 +406,10 @@
 	  pwms = <&pwm 0 50000 0>;
 	};
 	
+	working_hours {
+	  compatible = "working_hours";
+	};
+	
 	panel {
 		compatible = "ti,tilcdc,panel";
 		status = "okay";
