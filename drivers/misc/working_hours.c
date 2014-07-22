@@ -31,6 +31,7 @@
 #include <linux/of.h>
 #include <linux/kthread.h>
 #include <linux/i2c/eeprom.h>
+#include <linux/i2c/I2CSeeprom.h>
 
 #define RESET_CMD		"Reset__counter"
 #define POLLING_INTERVAL	60000
@@ -48,7 +49,73 @@ struct hrs_data
   // I2C SEEPROM accessor
   struct i2c_client*      seeprom_client;
   struct memory_accessor* seeprom_macc;
+  // Hours counters into I2C SEEPROM
+  u32                     sys_hours;
+  u32                     blight_hours;
 };
+
+/*
+ * Static helper function to get the hours counters from I2C SEEPROM
+ */
+static int get_hours_from_seeprom(struct hrs_data* data)
+{
+  int i;
+  int r1, r2;
+  u8  chksum, tmp;
+  u32 tmphours;
+  struct memory_accessor* macc = data->seeprom_macc;
+  
+  data->sys_hours = 0;
+  data->blight_hours = 0;
+
+  mutex_lock(&data->lock);
+  
+  /* Read sys_hours counter from I2C SEEPROM, with retry */
+  tmphours = 0;
+  chksum = 0;
+  for (i = 0; i < 5; i++) 
+  {
+    r1 = macc->read(macc, (u8*)&tmphours, SYSTEM_HOUR_COUNTER_OFFSET_I2C, sizeof(u32));
+    r2 = macc->read(macc, &chksum, SYSTEM_HOUR_CHK_OFFSET_I2C, sizeof(u8));
+    
+    if((r1 == sizeof(u32)) && (r2 == sizeof(u8)))
+    {
+      break;
+    }
+    printk("Retrying to read the sys_hours counter n=%d\n",i);
+    msleep(200);
+  }
+
+  tmp = 1 + (u8)((tmphours >> 24) & 0xff) + (u8)((tmphours >> 16) & 0xff) + (u8)((tmphours >> 8) & 0xff) + (u8)((tmphours >> 0) & 0xff);
+  tmp = tmp - 0xaa;
+  if(tmp == chksum) //The counter value is OK ... take it
+    data->sys_hours = tmphours;
+  
+  /* Read blight_hours counter from I2C SEEPROM, with retry */
+  tmphours = 0;
+  chksum = 0;
+  for (i = 0; i < 5; i++) 
+  {
+    r1 = macc->read(macc, (u8*)&tmphours, BACKLIGHT_HOUR_COUNTER_OFFSET_I2C, sizeof(u32));
+    r2 = macc->read(macc, &chksum,   BACKLIGHT_HOUR_CHK_OFFSET_I2C,     sizeof(u8));
+    
+    if((r1 == sizeof(u32)) && (r2 == sizeof(u8)))
+    {
+      break;
+    }
+    printk("Retrying to read the blight_hours counter n=%d\n",i);
+    msleep(200);
+  }
+  
+  tmp = 1 + (u8)((tmphours >> 24) & 0xff) + (u8)((tmphours >> 16) & 0xff) + (u8)((tmphours >> 8) & 0xff) + (u8)((tmphours >> 0) & 0xff);
+  tmp = tmp - 0xaa;
+  if(tmp == chksum) //The counter value is OK ... take it
+    data->blight_hours = tmphours;
+
+  mutex_unlock(&data->lock);
+  
+  return 0;
+}
 
 /*
  * static helper function for parsing the DTB tree
@@ -213,6 +280,9 @@ static int workinghours_probe(struct platform_device *pdev)
   }
   
   mutex_init(&data->lock); 
+  
+  get_hours_from_seeprom(data);
+  
   data->auto_update_interval = POLLING_INTERVAL;
   init_completion(&data->auto_update_stop);
   data->auto_update = kthread_run(update_thread, &pdev->dev, "%s", dev_name(&pdev->dev));
