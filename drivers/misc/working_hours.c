@@ -30,6 +30,7 @@
 #include <linux/delay.h>
 #include <linux/of.h>
 #include <linux/kthread.h>
+#include <linux/i2c/eeprom.h>
 
 #define RESET_CMD		"Reset__counter"
 #define POLLING_INTERVAL	60000
@@ -39,11 +40,73 @@
 
 struct hrs_data 
 {
-  struct mutex 		lock;
-  struct task_struct*	auto_update;
-  struct completion	auto_update_stop;
-  unsigned int		auto_update_interval;
+  struct mutex            lock;
+  // Update thread stuff
+  struct task_struct*     auto_update;
+  struct completion       auto_update_stop;
+  unsigned int            auto_update_interval;
+  // I2C SEEPROM accessor
+  struct i2c_client*      seeprom_client;
+  struct memory_accessor* seeprom_macc;
 };
+
+/*
+ * static helper function for parsing the DTB tree
+ */
+#ifdef CONFIG_OF
+static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
+{
+  struct device_node* node = dev->of_node;
+  struct device_node* eeprom_node;
+  u32                 eeprom_handle;
+  int                 ret;
+  /* Parse the DT to find the I2C SEEPROM bindings*/
+  ret = of_property_read_u32(node, "eeprom", &eeprom_handle);
+  if (ret != 0) 
+  {
+    dev_err(dev, "Failed to locate eeprom\n");
+    return -ENODEV;
+  }
+  
+  printk("eeprom_handle=0x%x\n",eeprom_handle); //!!!
+  
+  eeprom_node = of_find_node_by_phandle(eeprom_handle);
+  if (eeprom_node == NULL) 
+  {
+    dev_err(dev, "Failed to find eeprom node\n");
+    return -ENODEV;
+  }
+
+  printk("eeprom_node=%s\n",eeprom_node->name); //!!!
+
+  data->seeprom_client = of_find_i2c_device_by_node(eeprom_node);
+  if (data->seeprom_client == NULL) 
+  {
+    dev_err(dev, "Failed to find i2c client\n");
+    of_node_put(eeprom_node);
+    return -EPROBE_DEFER;
+  }
+  /* release ref to the node and inc reference to the I2C client used */
+  of_node_put(eeprom_node);
+  eeprom_node = NULL;
+  i2c_use_client(data->seeprom_client);
+  
+  /* And now get the I2C SEEPROM memory accessor */
+  data->seeprom_macc = i2c_eeprom_get_memory_accessor(data->seeprom_client);
+  if (IS_ERR_OR_NULL(data->seeprom_macc)) 
+  {
+    dev_err(dev, "Failed to get memory accessor\n");
+    return -ENODEV;
+  }
+  
+  return 0;
+}
+#else
+static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
+{
+  return -ENODEV;
+}
+#endif
 
 /* 
  * Polling thread for backlight and system working hours
@@ -135,7 +198,13 @@ static int workinghours_probe(struct platform_device *pdev)
     return -ENOMEM;
   }
   dev_set_drvdata(&pdev->dev, data);
-    
+
+  res = hrs_parse_dt(&pdev->dev, data);
+  if (res) {
+    dev_err(&pdev->dev, "Could not find valid DT data.\n");
+    goto hrs_error1;
+  }
+  
   res = sysfs_create_group(&pdev->dev.kobj, &working_hours_attr_group);
   if (res) 
   {
