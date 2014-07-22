@@ -23,31 +23,49 @@
 #include <linux/init.h>
 #include <linux/device.h>
 
-//#include <linux/gpio.h>
-//#include <linux/of_gpio.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
-//#include <linux/fb.h>
-//#include <linux/backlight.h>
 #include <linux/err.h>
-//#include <linux/pwm.h>
-//#include <linux/pwm_backlight.h>
-//#include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/of.h>
-//#include <video/displayconfig.h>
-//#include <linux/init.h> 
+#include <linux/kthread.h>
 
 #define RESET_CMD		"Reset__counter"
+#define POLLING_INTERVAL	60000
 
 #define WORKINGHOURS_DRV_NAME	"working_hours"
 #define DRIVER_VERSION		"1.0"
 
 struct hrs_data 
 {
-  struct mutex mutex;
+  struct mutex 		lock;
+  struct task_struct*	auto_update;
+  struct completion	auto_update_stop;
+  unsigned int		auto_update_interval;
 };
+
+/* 
+ * Polling thread for backlight and system working hours
+ */
+static int update_thread(void *p)
+{
+  struct hrs_data *data = dev_get_drvdata(p);
+  
+  while (!kthread_should_stop()) 
+  {
+    mutex_lock(&data->lock);
+    //TODO: Add polling and update logic here
+    printk("Polling...\n");
+    mutex_unlock(&data->lock);
+    if (kthread_should_stop())
+      break;
+    msleep_interruptible(data->auto_update_interval);
+  }
+  
+  complete_all(&data->auto_update_stop);
+  return 0;
+}
 
 /*
  * sysfs interface for backlight time counter
@@ -125,7 +143,11 @@ static int workinghours_probe(struct platform_device *pdev)
     goto hrs_error1;
   }
   
-  mutex_init(&data->mutex); 
+  mutex_init(&data->lock); 
+  data->auto_update_interval = POLLING_INTERVAL;
+  init_completion(&data->auto_update_stop);
+  data->auto_update = kthread_run(update_thread, &pdev->dev, "%s", dev_name(&pdev->dev));
+				  
   printk("working hours driver installed !!!\n");
   return res;
 hrs_error1:
@@ -136,6 +158,10 @@ hrs_error1:
 static int workinghours_remove(struct platform_device *pdev)
 {
   struct hrs_data *data = dev_get_drvdata(&pdev->dev);
+  
+  kthread_stop(data->auto_update);
+  wait_for_completion(&data->auto_update_stop);
+  
   sysfs_remove_group(&pdev->dev.kobj, &working_hours_attr_group);
   kfree(data);
   return 0;
