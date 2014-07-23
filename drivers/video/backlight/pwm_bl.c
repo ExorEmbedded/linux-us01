@@ -46,6 +46,17 @@ struct pwm_bl_data {
 };
 
 /*----------------------------------------------------------------------------------------------------------------*
+Exported function which allows to get the actual backlight enable status from kernel.
+It is needed for example by the working hours driver to correctly compute the effective backlight on time.
+*----------------------------------------------------------------------------------------------------------------*/
+bool pwm_backlight_is_enabled(struct backlight_device* bl)
+{
+  struct pwm_bl_data *pb = bl_get_data(bl);
+  return pb->enabled;
+}
+EXPORT_SYMBOL(pwm_backlight_is_enabled);
+
+/*----------------------------------------------------------------------------------------------------------------*
 Helper functions to retrieve the display id value, when passed from the cmdline, and use it to set the
 backlight parameters (the contents of the DTB file are overridden, if a valid dispaly id is passed from
 cmdline.)

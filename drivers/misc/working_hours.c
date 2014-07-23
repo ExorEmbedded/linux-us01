@@ -32,6 +32,7 @@
 #include <linux/kthread.h>
 #include <linux/i2c/eeprom.h>
 #include <linux/i2c/I2CSeeprom.h>
+#include <linux/backlight.h>
 
 #define RESET_CMD		"Reset__counter"
 #define POLLING_INTERVAL	60000
@@ -39,19 +40,25 @@
 #define WORKINGHOURS_DRV_NAME	"working_hours"
 #define DRIVER_VERSION		"1.0"
 
+/* Function prototype to retrieve the pwm_backlight status */
+bool pwm_backlight_is_enabled(struct backlight_device* bl);
+
 struct hrs_data 
 {
-  struct mutex            lock;
+  struct mutex             lock;
   // Update thread stuff
-  struct task_struct*     auto_update;
-  struct completion       auto_update_stop;
-  unsigned int            auto_update_interval;
+  struct task_struct*      auto_update;
+  struct completion        auto_update_stop;
+  unsigned int             auto_update_interval;
   // I2C SEEPROM accessor
-  struct i2c_client*      seeprom_client;
-  struct memory_accessor* seeprom_macc;
+  struct i2c_client*       seeprom_client;
+  struct memory_accessor*  seeprom_macc;
   // Hours counters into I2C SEEPROM
-  u32                     sys_hours;
-  u32                     blight_hours;
+  u32                      sys_hours;
+  u32                      blight_hours;
+  // Backlight related stuff
+  struct backlight_device* backlight;
+  bool                     bl_enabled;
 };
 
 /*
@@ -125,6 +132,7 @@ static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
 {
   struct device_node* node = dev->of_node;
   struct device_node* eeprom_node;
+  struct device_node* backlight_node;
   u32                 eeprom_handle;
   int                 ret;
   /* Parse the DT to find the I2C SEEPROM bindings*/
@@ -166,6 +174,21 @@ static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
     return -ENODEV;
   }
   
+  /* parse the DT to get the backlight references */
+  backlight_node = of_parse_phandle(dev->of_node, "backlight", 0);
+  if (backlight_node) 
+  {
+    data->backlight = of_find_backlight_by_node(backlight_node);
+    of_node_put(backlight_node);
+    if (!data->backlight)
+      return -EPROBE_DEFER;
+  }
+  else
+  {
+    dev_err(dev, "Failed to get backlight node\n");
+    return -ENODEV;
+  }
+    
   return 0;
 }
 #else
@@ -185,8 +208,9 @@ static int update_thread(void *p)
   while (!kthread_should_stop()) 
   {
     mutex_lock(&data->lock);
+    data->bl_enabled = pwm_backlight_is_enabled(data->backlight);
     //TODO: Add polling and update logic here
-    printk("Polling...\n");
+    printk("Backlight=%d\n",data->bl_enabled);
     mutex_unlock(&data->lock);
     if (kthread_should_stop())
       break;

@@ -371,7 +371,7 @@
 	};
 
 
-	backlight {
+	pwm_bl00: backlight {
 		compatible = "pwm-backlight";
 		pwms = <&ecap0 0 50000 0>;
 		brightness-levels = <0 4 8 12 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76 80 84 88 92 96 100>;
@@ -388,6 +388,7 @@
 	working_hours {
 	  compatible = "working_hours";
 	  eeprom = <&seeprom0>;
+	  backlight = <&pwm_bl00>;
 	};
 	
 	beeper {
