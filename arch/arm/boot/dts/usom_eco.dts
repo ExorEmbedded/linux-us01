@@ -267,7 +267,7 @@
 			pinctrl-0 = <&i2c0_pins>;
 
 			status = "okay";
-			clock-frequency = <400000>;
+			clock-frequency = <100000>;
 			/* Set OPP50 (0.95V) for VDD core */
 			sleep-sequence = /bits/ 8 <
 				0x02 0x2d 0x25 0x1f /* Set VDD2 to 0.95V */
@@ -283,7 +283,7 @@
 				reg = <0x54>;
 			};
 
-			m41t83@68 {
+			m41t83:m41t83@68 {
 				compatible = "stm,m41t83";
 				reg = <0x68>;
 			};
@@ -389,6 +389,7 @@
 	  compatible = "working_hours";
 	  eeprom = <&seeprom0>;
 	  backlight = <&pwm_bl00>;
+	  rtcnvram = <&m41t83>;
 	};
 	
 	beeper {

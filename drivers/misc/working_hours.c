@@ -33,12 +33,16 @@
 #include <linux/i2c/eeprom.h>
 #include <linux/i2c/I2CSeeprom.h>
 #include <linux/backlight.h>
+#include <linux/i2c/rtcnvram.h>
 
 #define RESET_CMD		"Reset__counter"
 #define POLLING_INTERVAL	60000
 
 #define WORKINGHOURS_DRV_NAME	"working_hours"
 #define DRIVER_VERSION		"1.0"
+
+#define SYSMINS_OFF             0x02
+#define BLIGHTMINS_OFF          0x03
 
 /* Function prototype to retrieve the pwm_backlight status */
 bool pwm_backlight_is_enabled(struct backlight_device* bl);
@@ -59,6 +63,12 @@ struct hrs_data
   // Backlight related stuff
   struct backlight_device* backlight;
   bool                     bl_enabled;
+  // I2C rtc-nvram accessor
+  struct i2c_client*       rtcnvram_client;
+  struct memory_accessor*  rtcnvram_macc;
+  // Mins counters into I2C rtc-nvram 
+  u32                      sys_mins;
+  u32                      blight_mins;
 };
 
 /*
@@ -125,6 +135,56 @@ static int get_hours_from_seeprom(struct hrs_data* data)
 }
 
 /*
+* Static helper function to get the mins counters from I2C rtc NVRAM
+*/
+static int get_mins_from_rtcnvram(struct hrs_data* data)
+{
+  int i;
+  int r1;
+  u8 tmpmins;
+  struct memory_accessor* macc = data->rtcnvram_macc;
+  
+  data->sys_mins = 0;
+  data->blight_mins = 0;
+  
+  mutex_lock(&data->lock);
+  
+  /* Read sys_mins counter from NVRAM, with retry */
+  tmpmins = 0;
+  for (i = 0; i < 5; i++) 
+  {
+    r1 = macc->read(macc, &tmpmins, SYSMINS_OFF, sizeof(u8));
+    
+    if(r1 == sizeof(u8))
+    {
+      break;
+    }
+    printk("Retrying to read the sys_mins counter n=%d\n",i);
+    msleep(200);
+  }
+  data->sys_mins = ((u32)tmpmins) << 3;
+  printk("data->sys_mins = %d\n",data->sys_mins); //!!!
+  
+  /* Read blight_mins counter from NVRAM, with retry */
+  tmpmins = 0;
+  for (i = 0; i < 5; i++) 
+  {
+    r1 = macc->read(macc, &tmpmins, BLIGHTMINS_OFF, sizeof(u8));
+    
+    if(r1 == sizeof(u8))
+    {
+      break;
+    }
+    printk("Retrying to read the blight_mins counter n=%d\n",i);
+    msleep(200);
+  }
+  data->blight_mins = ((u32)tmpmins) << 3;
+  printk("data->blight_mins = %d\n",data->blight_mins); //!!!
+  
+  return 0;
+}
+
+/*
  * static helper function for parsing the DTB tree
  */
 #ifdef CONFIG_OF
@@ -133,8 +193,11 @@ static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
   struct device_node* node = dev->of_node;
   struct device_node* eeprom_node;
   struct device_node* backlight_node;
+  struct device_node* rtcnvram_node;
   u32                 eeprom_handle;
+  u32                 rtcnvram_handle;
   int                 ret;
+
   /* Parse the DT to find the I2C SEEPROM bindings*/
   ret = of_property_read_u32(node, "eeprom", &eeprom_handle);
   if (ret != 0) 
@@ -188,8 +251,45 @@ static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
     dev_err(dev, "Failed to get backlight node\n");
     return -ENODEV;
   }
-    
-  return 0;
+
+ /* Parse the DT to find the I2C rtcnvram bindings*/
+ ret = of_property_read_u32(node, "rtcnvram", &rtcnvram_handle);
+ if (ret != 0) 
+ {
+   dev_err(dev, "Failed to locate rtcnvram\n");
+   return -ENODEV;
+ }
+ 
+ printk("rtcnvram_handle=0x%x\n",rtcnvram_handle); //!!!
+ 
+ rtcnvram_node = of_find_node_by_phandle(rtcnvram_handle);
+ if (rtcnvram_node == NULL) 
+ {
+   dev_err(dev, "Failed to find rtcnvram node\n");
+   return -ENODEV;
+ }
+
+ printk("rtcnvram_node=%s\n",rtcnvram_node->name); //!!!
+
+ data->rtcnvram_client = of_find_i2c_device_by_node(rtcnvram_node);
+ if (data->rtcnvram_client == NULL) 
+ {
+   dev_err(dev, "Failed to find rtcnvram i2c client\n");
+   of_node_put(rtcnvram_node);
+   return -EPROBE_DEFER;
+ }
+ /* release ref to the node */
+ of_node_put(rtcnvram_node);
+ rtcnvram_node = NULL;
+
+ /* And now get the I2C rtcnvram memory accessor */
+ data->rtcnvram_macc = rtc_nvram_get_memory_accessor(data->rtcnvram_client);
+ if (IS_ERR_OR_NULL(data->rtcnvram_macc)) 
+ {
+   dev_err(dev, "Failed to get rtcnvram memory accessor\n");
+   return -ENODEV;
+ }
+ return 0;
 }
 #else
 static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
@@ -306,6 +406,7 @@ static int workinghours_probe(struct platform_device *pdev)
   mutex_init(&data->lock); 
   
   get_hours_from_seeprom(data);
+  get_mins_from_rtcnvram(data);
   
   data->auto_update_interval = POLLING_INTERVAL;
   init_completion(&data->auto_update_stop);
