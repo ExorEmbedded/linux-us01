@@ -29,6 +29,7 @@
 #include <linux/reboot.h>
 #include <linux/watchdog.h>
 #endif
+#include <linux/i2c/rtcnvram.h>
 
 #define M41T80_REG_SSEC	0
 #define M41T80_REG_SEC	1
@@ -91,6 +92,8 @@ MODULE_DEVICE_TABLE(i2c, m41t80_id);
 struct m41t80_data {
 	u8 features;
 	struct rtc_device *rtc;
+	struct memory_accessor macc;
+	struct i2c_client* client;
 };
 
 static int m41t80_get_datetime(struct i2c_client *client,
@@ -621,16 +624,11 @@ static struct notifier_block wdt_notifier = {
 /*----------------------------------------------------------------------*
   NVRAM support related stuff
  *----------------------------------------------------------------------*/
-static ssize_t m41t80_nvram_read(struct file *filp, struct kobject *kobj, struct bin_attribute *attr, char *buf, loff_t off, size_t count)
+static ssize_t m41t80_nvram_read_lowlevel(struct m41t80_data *m41t80, char *buf, loff_t off, size_t count)
 {
-  struct i2c_client  *client;
-  struct m41t80_data *m41t80;
   int result;
   u8 nvram_addr;
   struct i2c_msg msgs[2];
-  
-  client = kobj_to_i2c_client(kobj);
-  m41t80 = i2c_get_clientdata(client);
   
   if(off >= M41T80_SRAM_SIZE)
     return 0;
@@ -643,37 +641,43 @@ static ssize_t m41t80_nvram_read(struct file *filp, struct kobject *kobj, struct
   
   nvram_addr = M41T80_SRAM_BASE + off;
   
-  msgs[0].addr  = client->addr;
+  msgs[0].addr  = m41t80->client->addr;
   msgs[0].flags = 0;
   msgs[0].len   = 1;
   msgs[0].buf   = &nvram_addr;
-
-  msgs[1].addr  = client->addr;
+  
+  msgs[1].addr  = m41t80->client->addr;
   msgs[1].flags = I2C_M_RD;
   msgs[1].len   = count;
   msgs[1].buf   = buf;
   
-  result = i2c_transfer(client->adapter, msgs, 2);
+  result = i2c_transfer(m41t80->client->adapter, msgs, 2);
   if (result < 0)
   {
-    dev_err(&client->dev, "%s error %d\n", "nvram read", result);
+    dev_err(&m41t80->client->dev, "%s error %d\n", "nvram read", result);
     return result;
   }
   return count;
 }
-		  
-static ssize_t m41t80_nvram_write(struct file *filp, struct kobject *kobj, struct bin_attribute *attr, char *buf, loff_t off, size_t count)
+
+static ssize_t m41t80_nvram_read(struct file *filp, struct kobject *kobj, struct bin_attribute *attr, char *buf, loff_t off, size_t count)
 {
   struct i2c_client  *client;
   struct m41t80_data *m41t80;
+  
+  client = kobj_to_i2c_client(kobj);
+  m41t80 = i2c_get_clientdata(client);
+  
+  return m41t80_nvram_read_lowlevel(m41t80, buf, off, count);
+}
+
+static ssize_t m41t80_nvram_write_lowlevel(struct m41t80_data *m41t80, char *buf, loff_t off, size_t count)
+{
   int result;
   u8 nvram_addr;
   struct i2c_msg msgs[1];
   u8 wbuf[M41T80_SRAM_SIZE + 1];
   int i;
-
-  client = kobj_to_i2c_client(kobj);
-  m41t80 = i2c_get_clientdata(client);
 
   if(off >= M41T80_SRAM_SIZE)
     return 0;
@@ -690,21 +694,32 @@ static ssize_t m41t80_nvram_write(struct file *filp, struct kobject *kobj, struc
   for(i=0; i < count; i++)
     wbuf[i+1] = buf[i];
   
-  msgs[0].addr  = client->addr;
+  msgs[0].addr  = m41t80->client->addr;
   msgs[0].flags = 0;
   msgs[0].len   = 1 + count;
   msgs[0].buf   = wbuf;
-    
-  result = i2c_transfer(client->adapter, msgs, 1);
+  
+  result = i2c_transfer(m41t80->client->adapter, msgs, 1);
   if (result < 0)
   {
-    dev_err(&client->dev, "%s error %d\n", "nvram write", result);
+    dev_err(&m41t80->client->dev, "%s error %d\n", "nvram write", result);
     return result;
   }
   
   return count;
+  
 }
 
+static ssize_t m41t80_nvram_write(struct file *filp, struct kobject *kobj, struct bin_attribute *attr, char *buf, loff_t off, size_t count)
+{
+  struct i2c_client  *client;
+  struct m41t80_data *m41t80;
+
+  client = kobj_to_i2c_client(kobj);
+  m41t80 = i2c_get_clientdata(client);
+  
+  return m41t80_nvram_write_lowlevel(m41t80, buf, off, count);
+}
 
 static struct bin_attribute m41t80_nvram_attr = {
   .attr = {
@@ -716,6 +731,24 @@ static struct bin_attribute m41t80_nvram_attr = {
   .size = M41T80_SRAM_SIZE,
 };
 
+/*-------------------------------------------------------------------------*/
+
+/*
+* This lets other kernel code access the nvram data. For example the
+* working hours counter will use nvram to store the temporary counters.
+*/
+
+static ssize_t nvram_macc_read(struct memory_accessor *macc, char *buf, off_t offset, size_t count)
+{
+  struct m41t80_data* m41t80 = container_of(macc, struct m41t80_data, macc);
+  return m41t80_nvram_read_lowlevel(m41t80, buf, offset, count);
+}
+
+static ssize_t nvram_macc_write(struct memory_accessor *macc, const char *buf, off_t offset, size_t count)
+{
+  struct m41t80_data* m41t80 = container_of(macc, struct m41t80_data, macc);
+  return m41t80_nvram_write_lowlevel(m41t80, (char *)buf, offset, count);
+}
 /*----------------------------------------------------------------------*/
 
 /*
@@ -820,6 +853,9 @@ static int m41t80_probe(struct i2c_client *client,
 	    dev_err(&client->dev, "ERROR sysfs_create_bin_file\n");
 	    return rc;
 	  }
+	  clientdata->macc.write = nvram_macc_write;
+	  clientdata->macc.read  = nvram_macc_read;
+	  clientdata->client = client;
 	}
 	  
 	return 0;
@@ -856,6 +892,31 @@ static int m41t80_remove(struct i2c_client *client)
 	return 0;
 }
 
+static int m41t80_command(struct i2c_client *client, unsigned int cmd, void *arg)
+{
+  struct m41t80_data *m41t80;
+  const struct memory_accessor **maccp;
+  
+  /* only supporting a single command */
+  if (cmd != I2C_NVRAM_GET_MEMORY_ACCESSOR)
+    return -ENOTSUPP;
+  
+  /* rudimentary check */
+  if (arg == NULL)
+    return -EINVAL;
+  
+  m41t80 = i2c_get_clientdata(client);
+  
+  /* Not supported in case of NVRAM not available */
+  if ((m41t80->features & M41T80_FEATURE_NVRAM) == 0)
+    return -ENOTSUPP;
+  
+  maccp = arg;
+  *maccp = &m41t80->macc;
+  
+  return 0;
+}
+
 static struct i2c_driver m41t80_driver = {
 	.driver = {
 		.name = "rtc-m41t80",
@@ -863,6 +924,7 @@ static struct i2c_driver m41t80_driver = {
 	.probe = m41t80_probe,
 	.remove = m41t80_remove,
 	.id_table = m41t80_id,
+	.command = m41t80_command,
 };
 
 module_i2c_driver(m41t80_driver);
