@@ -72,13 +72,101 @@ struct hrs_data
 };
 
 /*
+ * Helper function to update time counters and save them periodically, when needed
+ */
+static void UpdateCounters(struct hrs_data* data)
+{
+  int r1, r2, i;
+  u8  tmp;
+  u32 tmphours;
+  struct memory_accessor* macc = data->seeprom_macc;
+  
+  /* *** Update sys counters *** */
+  data->sys_mins++;
+  if(data->sys_mins >= 1440) // Update hours counter every 24h and save it to I2C SEEPROM
+  {
+    macc = data->seeprom_macc;
+    data->sys_hours += 24;
+    data->sys_mins = 0;
+    
+    tmphours = data->sys_hours;
+    tmp = 1 + (u8)((tmphours >> 24) & 0xff) + (u8)((tmphours >> 16) & 0xff) + (u8)((tmphours >> 8) & 0xff) + (u8)((tmphours >> 0) & 0xff);
+    tmp = tmp - 0xaa;
+
+    for (i = 0; i < 5; i++) 
+    {
+      r1 = macc->write(macc, (u8*)&tmphours, SYSTEM_HOUR_COUNTER_OFFSET_I2C, sizeof(u32));
+      r2 = macc->write(macc, &tmp, SYSTEM_HOUR_CHK_OFFSET_I2C, sizeof(u8));
+      
+      if((r1 == sizeof(u32)) && (r2 == sizeof(u8)))
+      {
+	break;
+      }
+      msleep(100);
+    }
+  }
+  
+  if((data->sys_mins % 8) == 0) // Update mins counter every 8 minutes and store it to rtc-nvram
+  {
+    macc = data->rtcnvram_macc;
+    tmp = (u8)(((data->sys_mins)>>3)& 0xff);
+    r1 = macc->write(macc, &tmp, SYSMINS_OFF, sizeof(u8));
+    if(r1 != sizeof(u8))
+    {
+      msleep(100);
+      macc->write(macc, &tmp, SYSMINS_OFF, sizeof(u8));
+    }
+  }
+
+  /* *** Update blight counters *** */
+  if(data->bl_enabled == false)
+    return;
+  
+  data->blight_mins++;
+  if(data->blight_mins >= 1440) // Update hours counter every 24h and save it to I2C SEEPROM
+  {
+    macc = data->seeprom_macc;
+    data->blight_hours += 24;
+    data->blight_mins = 0;
+  
+    tmphours = data->blight_hours;
+    tmp = 1 + (u8)((tmphours >> 24) & 0xff) + (u8)((tmphours >> 16) & 0xff) + (u8)((tmphours >> 8) & 0xff) + (u8)((tmphours >> 0) & 0xff);
+    tmp = tmp - 0xaa;
+  
+    for (i = 0; i < 5; i++) 
+    {
+      r1 = macc->write(macc, (u8*)&tmphours, BACKLIGHT_HOUR_COUNTER_OFFSET_I2C, sizeof(u32));
+      r2 = macc->write(macc, &tmp, BACKLIGHT_HOUR_CHK_OFFSET_I2C, sizeof(u8));
+    
+      if((r1 == sizeof(u32)) && (r2 == sizeof(u8)))
+      {
+	break;
+      }
+      msleep(100);
+    }
+  }
+
+  if((data->blight_mins % 8) == 0) // Update mins counter every 8 minutes and store it to rtc-nvram
+  {
+    macc = data->rtcnvram_macc;
+    tmp = (u8)(((data->blight_mins)>>3)& 0xff);
+    r1 = macc->write(macc, &tmp, BLIGHTMINS_OFF, sizeof(u8));
+    if(r1 != sizeof(u8))
+    {
+      msleep(100);
+      macc->write(macc, &tmp, BLIGHTMINS_OFF, sizeof(u8));
+    }
+  }
+}
+
+/*
  * Static helper function to get the hours counters from I2C SEEPROM
  */
 static int get_hours_from_seeprom(struct hrs_data* data)
 {
   int i;
   int r1, r2;
-  u8  chksum, tmp;
+  u8  tmp, chksum;
   u32 tmphours;
   struct memory_accessor* macc = data->seeprom_macc;
   
@@ -99,7 +187,6 @@ static int get_hours_from_seeprom(struct hrs_data* data)
     {
       break;
     }
-    printk("Retrying to read the sys_hours counter n=%d\n",i);
     msleep(200);
   }
 
@@ -120,7 +207,6 @@ static int get_hours_from_seeprom(struct hrs_data* data)
     {
       break;
     }
-    printk("Retrying to read the blight_hours counter n=%d\n",i);
     msleep(200);
   }
   
@@ -159,11 +245,9 @@ static int get_mins_from_rtcnvram(struct hrs_data* data)
     {
       break;
     }
-    printk("Retrying to read the sys_mins counter n=%d\n",i);
     msleep(200);
   }
   data->sys_mins = ((u32)tmpmins) << 3;
-  printk("data->sys_mins = %d\n",data->sys_mins); //!!!
   
   /* Read blight_mins counter from NVRAM, with retry */
   tmpmins = 0;
@@ -175,11 +259,10 @@ static int get_mins_from_rtcnvram(struct hrs_data* data)
     {
       break;
     }
-    printk("Retrying to read the blight_mins counter n=%d\n",i);
     msleep(200);
   }
   data->blight_mins = ((u32)tmpmins) << 3;
-  printk("data->blight_mins = %d\n",data->blight_mins); //!!!
+  mutex_unlock(&data->lock);
   
   return 0;
 }
@@ -206,16 +289,12 @@ static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
     return -ENODEV;
   }
   
-  printk("eeprom_handle=0x%x\n",eeprom_handle); //!!!
-  
   eeprom_node = of_find_node_by_phandle(eeprom_handle);
   if (eeprom_node == NULL) 
   {
     dev_err(dev, "Failed to find eeprom node\n");
     return -ENODEV;
   }
-
-  printk("eeprom_node=%s\n",eeprom_node->name); //!!!
 
   data->seeprom_client = of_find_i2c_device_by_node(eeprom_node);
   if (data->seeprom_client == NULL) 
@@ -260,16 +339,12 @@ static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
    return -ENODEV;
  }
  
- printk("rtcnvram_handle=0x%x\n",rtcnvram_handle); //!!!
- 
  rtcnvram_node = of_find_node_by_phandle(rtcnvram_handle);
  if (rtcnvram_node == NULL) 
  {
    dev_err(dev, "Failed to find rtcnvram node\n");
    return -ENODEV;
  }
-
- printk("rtcnvram_node=%s\n",rtcnvram_node->name); //!!!
 
  data->rtcnvram_client = of_find_i2c_device_by_node(rtcnvram_node);
  if (data->rtcnvram_client == NULL) 
@@ -309,8 +384,7 @@ static int update_thread(void *p)
   {
     mutex_lock(&data->lock);
     data->bl_enabled = pwm_backlight_is_enabled(data->backlight);
-    //TODO: Add polling and update logic here
-    printk("Backlight=%d\n",data->bl_enabled);
+    UpdateCounters(data);
     mutex_unlock(&data->lock);
     if (kthread_should_stop())
       break;
@@ -326,18 +400,48 @@ static int update_thread(void *p)
  */
 static ssize_t show_blight_hours(struct device *dev, struct device_attribute *attr, char *buf)
 {
-  printk("TODO: show_blight_hours\n");
-  return sprintf(buf, "0\n");
+  u32 tmphours;
+  struct hrs_data *data = dev_get_drvdata(dev);
+  mutex_lock(&data->lock);
+  tmphours = data->blight_hours + data->blight_mins/60;
+  mutex_unlock(&data->lock);
+  return sprintf(buf, "%d\n",tmphours);
 }
 
 static ssize_t reset_blight_hours(struct device *dev, struct device_attribute *attr, const  char *buf, size_t count)
 {
+  struct hrs_data *data = dev_get_drvdata(dev);
+  struct memory_accessor* macc = data->seeprom_macc;
+  u8 zerobuf[] = {0,0,0,0,0x57};
+  int r1;
+  
   if(strncmp(buf,RESET_CMD,strlen(RESET_CMD)))
   {
     dev_err(dev, "blight_hours: wrong cmd\n");
     return -1;
   }
-  printk("TODO: reset_blight_hours\n");
+  
+  mutex_lock(&data->lock);
+  data->blight_hours = 0;
+  data->blight_mins = 0;
+  
+  /* reset counter in SEEPROM */
+  r1 = macc->write(macc, zerobuf, BACKLIGHT_HOUR_COUNTER_OFFSET_I2C, sizeof(zerobuf));
+  if(r1 != sizeof(zerobuf))
+  {
+    msleep(200);
+    macc->write(macc, zerobuf, BACKLIGHT_HOUR_COUNTER_OFFSET_I2C, sizeof(zerobuf));
+  }
+  
+  /* reset counter in NVRAM */
+  macc = data->rtcnvram_macc;
+  r1 = macc->write(macc, zerobuf, BLIGHTMINS_OFF, sizeof(u8));
+  if(r1 != sizeof(u8))
+  {
+    msleep(200);
+    macc->write(macc, zerobuf, BLIGHTMINS_OFF, sizeof(u8));
+  }
+  mutex_unlock(&data->lock);
   return count;
 }
 static DEVICE_ATTR(blight_hours, S_IRUGO | S_IWUSR, show_blight_hours, reset_blight_hours);
@@ -347,18 +451,48 @@ static DEVICE_ATTR(blight_hours, S_IRUGO | S_IWUSR, show_blight_hours, reset_bli
  */
 static ssize_t show_sys_hours(struct device *dev, struct device_attribute *attr, char *buf)
 {
-  printk("TODO: show_sys_hours\n");
-  return sprintf(buf, "0\n");
+  u32 tmphours;
+  struct hrs_data *data = dev_get_drvdata(dev);
+  mutex_lock(&data->lock);
+  tmphours = data->sys_hours + data->sys_mins/60;
+  mutex_unlock(&data->lock);
+  return sprintf(buf, "%d\n",tmphours);
 }
 
 static ssize_t reset_sys_hours(struct device *dev, struct device_attribute *attr, const  char *buf, size_t count)
 {
+  struct hrs_data *data = dev_get_drvdata(dev);
+  struct memory_accessor* macc = data->seeprom_macc;
+  u8 zerobuf[] = {0,0,0,0,0x57};
+  int r1;
+  
   if(strncmp(buf,RESET_CMD,strlen(RESET_CMD)))
   {
     dev_err(dev, "sys_hours: wrong cmd\n");
     return -1;
   }
-  printk("TODO: reset_sys_hours\n");
+  
+  mutex_lock(&data->lock);
+  data->sys_hours = 0;
+  data->sys_mins = 0;
+  
+  /* reset counter in SEEPROM */
+  r1 = macc->write(macc, zerobuf, SYSTEM_HOUR_COUNTER_OFFSET_I2C, sizeof(zerobuf));
+  if(r1 != sizeof(zerobuf))
+  {
+    msleep(200);
+    macc->write(macc, zerobuf, SYSTEM_HOUR_COUNTER_OFFSET_I2C, sizeof(zerobuf));
+  }
+  
+  /* reset counter in NVRAM */
+  macc = data->rtcnvram_macc;
+  r1 = macc->write(macc, zerobuf, SYSMINS_OFF, sizeof(u8));
+  if(r1 != sizeof(u8))
+  {
+    msleep(200);
+    macc->write(macc, zerobuf, SYSMINS_OFF, sizeof(u8));
+  }
+  mutex_unlock(&data->lock);
   return count;
 }
 static DEVICE_ATTR(sys_hours, S_IRUGO | S_IWUSR, show_sys_hours, reset_sys_hours);
@@ -412,7 +546,7 @@ static int workinghours_probe(struct platform_device *pdev)
   init_completion(&data->auto_update_stop);
   data->auto_update = kthread_run(update_thread, &pdev->dev, "%s", dev_name(&pdev->dev));
 				  
-  printk("working hours driver installed !!!\n");
+  printk("Working hours driver installed !!!\n");
   return res;
 hrs_error1:
   kfree(data);
