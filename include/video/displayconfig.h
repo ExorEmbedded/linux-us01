@@ -18,6 +18,20 @@
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
+ 
+ /*
+ * HISTORY REVISION
+ * Version  Signature       Date      	Modification reason		
+ * 1.0  		SS							08.07.14		Started from displayconfig_rev2.00.xml; the min backlight is set to minimum value supported by the hw (display as
+ *																			on US01 there is NO support of the gamma correction and therefor the min backlight value might be different from 
+ *																			the value used on Serie500 (displayconfig.xml file).
+ * 1.1			SS              25.08.14    Alligned to displayconfog_rev2.2.1.xml:
+ *																			Display code #48: changed max brightness to 70%
+ *																			Display code #46: changed max brightness to 100%
+ *																			Display code #47: changed max brightness to 100%
+ *																			Added display code #49: Rocktech for ECO
+ */
+ 
 #ifndef DISPLAYCONFIG_H
 #define DISPLAYCONFIG_H
 
@@ -28,7 +42,7 @@ structure which describes the LCD parameters
 -----------------------------------------------------------*/
 struct t_DisplayParams{
   unsigned long dispid;                           // Display id
-  unsigned short brightness_min, brightness_max;  // Inverter's minimum and maximum brightness (expressed as pwm dutycycle; range 0...100)
+  unsigned short brightness_min, brightness_max;  // Inverter's minimum and maximum brightness 	(expressed as pwm dutycycle; range 0...100)
   unsigned long pwmfreq;                          // Frequency of PWM controller [Hz]
   unsigned long rezx, rezy, bpp;                  // Resolution and bpp
   unsigned long hs_fp, hs_bp, hs_w, hs_inv;       // Hsync params
@@ -404,7 +418,7 @@ static struct t_DisplayParams displayconfig[] = {
       
       .pwmfreq        = 10000,
       .brightness_min = 1,
-      .brightness_max = 80,
+      .brightness_max = 100,
     },
     /* 47: AUO G101EVN01.0 1280x800 */
     {
@@ -430,7 +444,7 @@ static struct t_DisplayParams displayconfig[] = {
       
       .pwmfreq        = 4000,
       .brightness_min = 5,
-      .brightness_max = 85,
+      .brightness_max = 100,
     },    
     /* 48: Evervision VGG804806 for eTOP607 800x480 */
     {
@@ -456,8 +470,34 @@ static struct t_DisplayParams displayconfig[] = {
       
       .pwmfreq        = 10000,
       .brightness_min = 1,
-      .brightness_max = 100,
-    },        
+      .brightness_max = 70,
+    },   
+    /* 49: Rocktech RK070EH1401-T 800x480*/
+    {
+        .dispid    = 49,
+        .rezx      = 800, 
+        .rezy      = 480, 
+        .bpp       = 16,
+        
+        .pclk_freq = 30000, 
+        .pclk_inv  = 0,
+        
+        .hs_fp     = 205, 
+        .hs_bp     = 46, 
+        .hs_w      = 3, 
+        .hs_inv    = 1,
+        
+        .vs_fp     = 20, 
+        .vs_bp     = 23, 
+        .vs_w      = 2, 
+        .vs_inv    = 1,
+        
+        .blank_inv      = 0,
+        
+        .pwmfreq        = 10000,
+        .brightness_min = 1,
+        .brightness_max = 100,
+    },     
     /* END OF LIST */
     {
       .dispid    = NODISPLAY,
