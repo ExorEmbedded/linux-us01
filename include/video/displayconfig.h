@@ -29,7 +29,9 @@
  *																			Display code #48: changed max brightness to 70%
  *																			Display code #46: changed max brightness to 100%
  *																			Display code #47: changed max brightness to 100%
- *																			Added display code #49: Rocktech for ECO
+ *																			Added display code #49: 7" Rocktech for ECO
+ * 1.2			SS              12.09.14    Alligned to displayconfog_rev2.2.2.xml:
+ *																			Added display code #50: 10" Rocktech for ECO
  */
  
 #ifndef DISPLAYCONFIG_H
@@ -490,6 +492,32 @@ static struct t_DisplayParams displayconfig[] = {
         .vs_fp     = 20, 
         .vs_bp     = 23, 
         .vs_w      = 2, 
+        .vs_inv    = 1,
+        
+        .blank_inv      = 0,
+        
+        .pwmfreq        = 10000,
+        .brightness_min = 1,
+        .brightness_max = 100,
+    },     
+    /* 50: Rocktech RK101EH1401-T 1024x600*/
+    {
+        .dispid    = 50,
+        .rezx      = 1024, 
+        .rezy      = 600, 
+        .bpp       = 16,
+        
+        .pclk_freq = 51000, 
+        .pclk_inv  = 0,
+        
+        .hs_fp     = 10, 
+        .hs_bp     = 320, 
+        .hs_w      = 10, 
+        .hs_inv    = 1,
+        
+        .vs_fp     = 10, 
+        .vs_bp     = 35, 
+        .vs_w      = 10, 
         .vs_inv    = 1,
         
         .blank_inv      = 0,
