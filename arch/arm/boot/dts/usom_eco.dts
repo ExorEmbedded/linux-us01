@@ -39,6 +39,8 @@
 			pinctrl-single,pins = <
 				0x170 (PIN_INPUT_PULLUP | MUX_MODE0)	/* uart0_rxd.uart0_rxd */
 				0x174 (PIN_OUTPUT_PULLDOWN | MUX_MODE0)	/* uart0_txd.uart0_txd */
+				0x168 (PIN_INPUT | MUX_MODE0)		/* uart0_ctsn.uart0_ctsn */
+				0x16C (PIN_OUTPUT_PULLDOWN | MUX_MODE0)	/* uart0_rtsn.uart0_rtsn */
 			>;
 		};
 
