@@ -32,6 +32,10 @@
  *																			Added display code #49: 7" Rocktech for ECO
  * 1.2			SS              12.09.14    Alligned to displayconfog_rev2.2.2.xml:
  *																			Added display code #50: 10" Rocktech for ECO
+ * 						              18.09.14    Alligned to displayconfog_rev2.3.1.xml:
+ *																			Display code #46: changed horizontal back porch to 39
+ * 1.3			SS              17.02.15    Alligned to displayconfog_rev2.3.2.xml:
+ *																			Added display code #51: 4,3" Rocktech for ECO
  */
  
 #ifndef DISPLAYCONFIG_H
@@ -407,7 +411,7 @@ static struct t_DisplayParams displayconfig[] = {
       .pclk_inv  = 0,
       
       .hs_fp     = 40, 
-      .hs_bp     = 40, 
+      .hs_bp     = 39, 
       .hs_w      = 48, 
       .hs_inv    = 1,
       
@@ -525,7 +529,33 @@ static struct t_DisplayParams displayconfig[] = {
         .pwmfreq        = 10000,
         .brightness_min = 1,
         .brightness_max = 100,
-    },     
+    },  
+		/* 51: Rocktech RK043EH1401-T 480x272*/
+    {
+        .dispid    = 51,
+        .rezx      = 480, 
+        .rezy      = 272, 
+        .bpp       = 16,
+        
+        .pclk_freq = 9000, 
+        .pclk_inv  = 0,
+        
+        .hs_fp     = 8, 
+        .hs_bp     = 43, 
+        .hs_w      = 1, 
+        .hs_inv    = 1,
+        
+        .vs_fp     = 4, 
+        .vs_bp     = 12, 
+        .vs_w      = 1, 
+        .vs_inv    = 1,
+        
+        .blank_inv      = 0,
+        
+        .pwmfreq        = 10000,
+        .brightness_min = 1,
+        .brightness_max = 80,
+    },         
     /* END OF LIST */
     {
       .dispid    = NODISPLAY,
