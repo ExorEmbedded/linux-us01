@@ -275,6 +275,33 @@ static int ksz8873mll_config_aneg(struct phy_device *phydev)
 	return 0;
 }
 
+// Specific methods for the KSZ886X eth. switch in order it to appear as always connected with
+// the MAC (cpu).
+static int ksz886x_config_init(struct phy_device *phydev)
+{
+  return 0;
+}
+
+static int ksz886x_config_aneg(struct phy_device *phydev)
+{
+  return 0;
+}
+
+static int ksz886x_read_status(struct phy_device *phydev)
+{
+  //Force the link status
+  phydev->duplex = DUPLEX_FULL;
+  phydev->speed = SPEED_100;
+  phydev->link = 1;
+  phydev->pause = phydev->asym_pause = 0;
+  
+  //Force to skip autonegatiation and go to RUNNING status
+  if(phydev->state == PHY_AN)
+    phydev->state = PHY_RUNNING;
+  
+  return 0;
+}
+
 static struct phy_driver ksphy_driver[] = {
 {
 	.phy_id		= PHY_ID_KS8737,
@@ -416,10 +443,10 @@ static struct phy_driver ksphy_driver[] = {
 	.phy_id_mask	= 0x00fffff0,
 	.name		= "Micrel KSZ886X Switch",
 	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause),
-	.flags		= PHY_HAS_MAGICANEG | PHY_HAS_INTERRUPT,
-	.config_init	= kszphy_config_init,
-	.config_aneg	= genphy_config_aneg,
-	.read_status	= genphy_read_status,
+	.flags		= PHY_HAS_MAGICANEG,
+	.config_init	= ksz886x_config_init,
+	.config_aneg	= ksz886x_config_aneg,
+	.read_status	= ksz886x_read_status,
 	.driver		= { .owner = THIS_MODULE, },
 } };
 
