@@ -193,7 +193,20 @@
 		  0x98 0x02	/* gpmc_wen: BUZZER / timer6 OUTPUT | MODE2 */
 		  >;
 		};
-		
+
+		user_leds_default: user_leds_default {
+			pinctrl-single,pins = <
+				0x94 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_5 */
+				0x88 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_2 */
+			>;
+		};
+
+		user_leds_sleep: user_leds_sleep {
+			pinctrl-single,pins = <
+				0x94 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_5 */
+				0x88 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_2 */
+			>;
+		};
 	};
 
 	ocp {
@@ -310,6 +323,26 @@
 		brightness-levels = <0 4 8 12 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76 80 84 88 92 96 100>;
 		default-brightness-level = <0>;
 		enable-gpios = <&gpio2 0 0>;
+	};
+
+	leds {
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&user_leds_default>;
+		pinctrl-1 = <&user_leds_sleep>;
+
+		compatible = "gpio-leds";
+
+		led@1 {
+			label = "us01:dl:usr0";
+			gpios = <&gpio2 2 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+		};
+
+		led@2 {
+			label = "us01:fault:usr0";
+			gpios = <&gpio2 5 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
 	};
 	
 	pwm: omap-pwm {
