@@ -99,6 +99,8 @@
 		  0x54 (PIN_OUTPUT_PULLDOWN | MUX_MODE3)
 		  0x50 (PIN_OUTPUT_PULLDOWN | MUX_MODE3)
 		  0x40 (PIN_OUTPUT_PULLDOWN | MUX_MODE3)
+		  0x138 (PIN_INPUT_PULLUP | MUX_MODE7)
+		  0x64  (PIN_INPUT_PULLUP | MUX_MODE7)
 		  >;
 		};
 		
@@ -456,6 +458,8 @@
 	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&davinci_mdio_default>;
 	pinctrl-1 = <&davinci_mdio_sleep>;
+	reset0 = <&gpio2 19 0>;
+	reset1 = <&gpio1 25 0>;
 };
 
 &cpsw_emac0 {
