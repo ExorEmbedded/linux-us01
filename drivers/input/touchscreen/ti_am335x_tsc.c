@@ -268,13 +268,12 @@ static void titsc_read_coordinates(struct titsc *ts_dev,
 		ysum /= creads - 2;
 		xsum /= creads - 2;
 		
-		for (i = 1; i < creads; i++) 
+		for (i = 0; i < creads; i++) 
 		{
 		  if( (xvals[i] < FUZZ_X) || (xvals[i] >  (MAX_12BIT - FUZZ_X)))
 		  {
 		    *z1 = 0;
 		    *z2 = 0;
-//		    printk("!! Skipped sample xvals[i] = %d\n",xvals[i]); //!!!
 		    break;
 		  }
 
@@ -282,24 +281,24 @@ static void titsc_read_coordinates(struct titsc *ts_dev,
 		  {
 		    *z1 = 0;
 		    *z2 = 0;
-//		    printk("!! Skipped sample yvals[i] = %d\n",yvals[i]); //!!!
 		    break;
 		  }
 		  
-		  if( (xvals[i] - xvals[i-1]) > 2 * FUZZ_X)
+		  if((i > 1) && (i < (creads - 1)))
 		  {
-		    *z1 = 0;
-		    *z2 = 0;
-//		    printk("!! Skipped sample Dx = %d\n",xvals[i]- xvals[i-1]); //!!!
-		    break;
-		  }
-		    
-		  if( (yvals[i] - yvals[i-1]) > 2 * FUZZ_Y)
-		  {
-		    *z1 = 0;
-		    *z2 = 0;
-//		    printk("!! Skipped sample Dy = %d\n",yvals[i]- yvals[i-1]); //!!!
-		    break;
+		    if( (xvals[i] - xvals[i-1]) > 2 * FUZZ_X)
+		    {
+		      *z1 = 0;
+		      *z2 = 0;
+		      break;
+		    }
+		      
+		    if( (yvals[i] - yvals[i-1]) > 2 * FUZZ_Y)
+		    {
+		      *z1 = 0;
+		      *z2 = 0;
+		      break;
+		    }
 		  }
 		}
 	}
@@ -314,6 +313,7 @@ static irqreturn_t titsc_irq(int irq, void *dev)
 	unsigned int fsm, status, irqclr = 0;
 	unsigned int x = 0, y = 0;
 	unsigned int z1, z2, z, tmp;
+	unsigned int max_rt;
 
 	status = titsc_readl(ts_dev, REG_RAWIRQSTATUS);
 	if (status & IRQENB_HW_PEN) {
@@ -366,13 +366,14 @@ static irqreturn_t titsc_irq(int irq, void *dev)
 			z /= z2;
 			z = (z + 2047) >> 12;
 			
-			if (z <= MAX_12BIT) {
+			max_rt = (3 * ts_dev->x_plate_resistance) / 2;
+			
+			if (z <= max_rt) {
 				input_report_abs(input_dev, ABS_X, x);
 				input_report_abs(input_dev, ABS_Y, y);
 				input_report_abs(input_dev, ABS_PRESSURE, z);
 				input_report_key(input_dev, BTN_TOUCH, 1);
 				input_sync(input_dev);
-//				 printk("x=%d y=%d z=%d\n",x,y,z); //!!!
 			}
 		}
 		irqclr |= IRQENB_FIFO0THRES;
@@ -504,9 +505,9 @@ static int titsc_probe(struct platform_device *pdev)
 	input_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
 	input_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
 
-	input_set_abs_params(input_dev, ABS_X, 0, MAX_12BIT, 0, 0);
-	input_set_abs_params(input_dev, ABS_Y, 0, MAX_12BIT, 0, 0);
-	input_set_abs_params(input_dev, ABS_PRESSURE, 0, MAX_12BIT, 0, 0);
+	input_set_abs_params(input_dev, ABS_X, 0, MAX_12BIT, FUZZ_X, 0);
+	input_set_abs_params(input_dev, ABS_Y, 0, MAX_12BIT, FUZZ_Y, 0);
+	input_set_abs_params(input_dev, ABS_PRESSURE, 0, MAX_12BIT, FUZZ_Z, 0);
 
 	/* register to the input system */
 	err = input_register_device(input_dev);
