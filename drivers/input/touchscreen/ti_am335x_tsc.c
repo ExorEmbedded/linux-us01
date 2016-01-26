@@ -469,6 +469,8 @@ static int titsc_probe(struct platform_device *pdev)
 		err = -ENOMEM;
 		goto err_free_mem;
 	}
+	
+	memset(ts_dev, 0, sizeof(struct titsc));
 
 	tscadc_dev->tsc = ts_dev;
 	ts_dev->mfd_tscadc = tscadc_dev;
