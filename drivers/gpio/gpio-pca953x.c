@@ -23,6 +23,7 @@
 #ifdef CONFIG_OF_GPIO
 #include <linux/of_platform.h>
 #endif
+#include <linux/delay.h>
 
 #define PCA953X_INPUT		0
 #define PCA953X_OUTPUT		1
@@ -186,9 +187,14 @@ static int pca953x_read_regs(struct pca953x_chip *chip, int reg, u8 *val)
 					(reg << bank_shift) | REG_ADDR_AI,
 					NBANK(chip), val);
 	} else {
-		ret = i2c_smbus_read_word_data(chip->client, reg << 1);
+		/* We use 2 8bit data read with 110us delay in between to be compatible with mcp23016 */
+  		ret = i2c_smbus_read_byte_data(chip->client, reg << 1);
 		val[0] = (u16)ret & 0xFF;
-		val[1] = (u16)ret >> 8;
+		if(ret<0) return ret;
+		udelay(110);
+  		ret = i2c_smbus_read_byte_data(chip->client, (reg << 1) + 1);
+		val[1] = (u16)ret & 0xFF;
+
 	}
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed reading register\n");
@@ -344,6 +350,12 @@ exit:
 	mutex_unlock(&chip->i2c_lock);
 }
 
+static int pca953x_gpio_set_debounce(struct gpio_chip *chip, unsigned offset, unsigned debounce)
+{
+  /* This is just a dummy function to avoid errors in case a debounce value is set */
+  return 0;
+}
+
 static void pca953x_setup_gpio(struct pca953x_chip *chip, int gpios)
 {
 	struct gpio_chip *gc;
@@ -354,6 +366,7 @@ static void pca953x_setup_gpio(struct pca953x_chip *chip, int gpios)
 	gc->direction_output = pca953x_gpio_direction_output;
 	gc->get = pca953x_gpio_get_value;
 	gc->set = pca953x_gpio_set_value;
+	gc->set_debounce = pca953x_gpio_set_debounce;
 	gc->can_sleep = 1;
 
 	gc->base = chip->gpio_start;

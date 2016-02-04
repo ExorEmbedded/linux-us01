@@ -2147,7 +2147,11 @@ static int omap_hsmmc_probe(struct platform_device *pdev)
 
 	ret = omap_hsmmc_gpio_init(pdata);
 	if (ret)
-		goto err;
+	{
+	  dev_err(&pdev->dev, "WARNING: Unable to allocate gpios: assuming no gpio_cd and no gpio_wp is used\n");
+	  pdata->slots[0].switch_pin = -EINVAL;
+	  pdata->slots[0].gpio_wp = -EINVAL;
+	}
 
 	mmc = mmc_alloc_host(sizeof(struct omap_hsmmc_host), &pdev->dev);
 	if (!mmc) {
@@ -2403,7 +2407,7 @@ err1:
 	mmc_free_host(mmc);
 err_alloc:
 	omap_hsmmc_gpio_free(pdata);
-err:
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res)
 		release_mem_region(res->start, resource_size(res));
