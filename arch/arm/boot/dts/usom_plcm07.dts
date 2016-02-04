@@ -32,6 +32,7 @@
 			pinctrl-single,pins = <
 				0x188 (PIN_INPUT_PULLUP | MUX_MODE0)	/* i2c0_sda.i2c0_sda */
 				0x18c (PIN_INPUT_PULLUP | MUX_MODE0)	/* i2c0_scl.i2c0_scl */
+				0x1A8 (PIN_INPUT_PULLDOWN | MUX_MODE7)  /* mmc1 cd: mcasp0_axr1.mcasp0_axr1. Interrupt from the I2C expander */
 			>;
 		};
 
@@ -274,7 +275,17 @@
 			tps: tps@2d {
 				reg = <0x2d>;
 			};
-
+			
+			pca9555: pca9555@20 {
+				compatible = "nxp,pca9555";
+				interrupt-parent = <&gpio3>;
+				interrupts = <20 0x8>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				reg = <0x20>;
+			};
 		};
 
 		spi0: spi@48030000 {
@@ -527,6 +538,7 @@
 	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&mmc1_pins_default>;
 	pinctrl-1 = <&mmc1_pins_sleep>;
+	cd-gpios = <&pca9555 0 0>; 
 };
 
 &mmc2 {
