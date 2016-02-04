@@ -106,6 +106,7 @@ static int pca953x_read_single(struct pca953x_chip *chip, int reg, u32 *val,
 	int bank_shift = fls((chip->gpio_chip.ngpio - 1) / BANK_SZ);
 	int offset = off / BANK_SZ;
 
+	udelay(110); /* For mcp23016 timings */
 	ret = i2c_smbus_read_byte_data(chip->client,
 				(reg << bank_shift) + offset);
 	*val = ret;
@@ -124,7 +125,8 @@ static int pca953x_write_single(struct pca953x_chip *chip, int reg, u32 val,
 	int ret = 0;
 	int bank_shift = fls((chip->gpio_chip.ngpio - 1) / BANK_SZ);
 	int offset = off / BANK_SZ;
-
+	
+	udelay(110); /* For mcp23016 timings */
 	ret = i2c_smbus_write_byte_data(chip->client,
 					(reg << bank_shift) + offset, val);
 
@@ -150,8 +152,13 @@ static int pca953x_write_regs(struct pca953x_chip *chip, int reg, u8 *val)
 	} else {
 		switch (chip->chip_type) {
 		case PCA953X_TYPE:
-			ret = i2c_smbus_write_word_data(chip->client,
-							reg << 1, (u16) *val);
+			/* We use 2 8bit data write with 110us delay in between to be compatible with mcp23016 timings */
+			udelay(110);
+			ret = i2c_smbus_write_byte_data(chip->client, reg << 1,	val[0]);
+			if (ret < 0)
+				break;
+			udelay(110);
+			ret = i2c_smbus_write_byte_data(chip->client, (reg << 1) + 1, val[1]);
 			break;
 		case PCA957X_TYPE:
 			ret = i2c_smbus_write_byte_data(chip->client, reg << 1,
@@ -187,7 +194,8 @@ static int pca953x_read_regs(struct pca953x_chip *chip, int reg, u8 *val)
 					(reg << bank_shift) | REG_ADDR_AI,
 					NBANK(chip), val);
 	} else {
-		/* We use 2 8bit data read with 110us delay in between to be compatible with mcp23016 */
+		/* We use 2 8bit data read with 110us delay in between to be compatible with mcp23016 timings*/
+		udelay(110);
   		ret = i2c_smbus_read_byte_data(chip->client, reg << 1);
 		val[0] = (u16)ret & 0xFF;
 		if(ret<0) return ret;
@@ -771,13 +779,36 @@ static int pca953x_probe(struct i2c_client *client,
 	pca953x_setup_gpio(chip, id->driver_data & PCA_GPIO_MASK);
 
 	if (chip->chip_type == PCA953X_TYPE)
+	{
 		ret = device_pca953x_init(chip, invert);
+		if (ret) 
+		{
+		  udelay(500);
+		  ret = device_pca953x_init(chip, invert);
+		  if (ret) 
+		  {
+		    udelay(500);
+		    ret = device_pca953x_init(chip, invert);
+		  }
+		}
+	}
 	else
 		ret = device_pca957x_init(chip, invert);
 	if (ret)
 		return ret;
 
 	ret = pca953x_irq_setup(chip, id, irq_base);
+	if (ret)
+	{
+	  udelay(500);
+	  ret = pca953x_irq_setup(chip, id, irq_base);
+	  if (ret)
+	  {
+	    udelay(500);
+	    ret = pca953x_irq_setup(chip, id, irq_base);
+	  }
+	}
+
 	if (ret)
 		return ret;
 
