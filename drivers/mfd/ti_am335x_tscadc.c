@@ -188,9 +188,6 @@ static	int ti_tscadc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to allocate memory.\n");
 		return -ENOMEM;
 	}
-
-	memset(tscadc, 0, sizeof(tscadc));
-
 	tscadc->dev = &pdev->dev;
 
 	err = platform_get_irq(pdev, 0);
