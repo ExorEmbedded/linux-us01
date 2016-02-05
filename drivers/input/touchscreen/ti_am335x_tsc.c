@@ -34,10 +34,6 @@
 #define SEQ_SETTLE		275
 #define MAX_12BIT		((1 << 12) - 1)
 
-#define FUZZ_X			16
-#define FUZZ_Y			16
-#define FUZZ_Z			4
-
 static const int config_pins[] = {
 	STEPCONFIG_XPP,
 	STEPCONFIG_XNN,
@@ -242,12 +238,6 @@ static void titsc_read_coordinates(struct titsc *ts_dev,
 	 * readouts, sort the co-ordinate samples, drop
 	 * min and max values and report the average of
 	 * remaining values.
-	 * 
-	 * In case of 4 or more readouts, if a sample 
-	 * is "nearly" 0 or MAX_12BIT or we have an 
-	 * excessive difference (noise) among samples
-	 * z1 and z2 are seto to 0 to invalidate
-	 * this set of coordinates.
 	 */
 	if (creads <=  3) {
 		for (i = 0; i < creads; i++) {
@@ -267,41 +257,6 @@ static void titsc_read_coordinates(struct titsc *ts_dev,
 		}
 		ysum /= creads - 2;
 		xsum /= creads - 2;
-		
-		for (i = 1; i < creads; i++) 
-		{
-		  if( (xvals[i] < FUZZ_X) || (xvals[i] >  (MAX_12BIT - FUZZ_X)))
-		  {
-		    *z1 = 0;
-		    *z2 = 0;
-//		    printk("!! Skipped sample xvals[i] = %d\n",xvals[i]); //!!!
-		    break;
-		  }
-
-		  if( (yvals[i] < FUZZ_Y) || (yvals[i] >  (MAX_12BIT - FUZZ_Y)))
-		  {
-		    *z1 = 0;
-		    *z2 = 0;
-//		    printk("!! Skipped sample yvals[i] = %d\n",yvals[i]); //!!!
-		    break;
-		  }
-		  
-		  if( (xvals[i] - xvals[i-1]) > 2 * FUZZ_X)
-		  {
-		    *z1 = 0;
-		    *z2 = 0;
-//		    printk("!! Skipped sample Dx = %d\n",xvals[i]- xvals[i-1]); //!!!
-		    break;
-		  }
-		    
-		  if( (yvals[i] - yvals[i-1]) > 2 * FUZZ_Y)
-		  {
-		    *z1 = 0;
-		    *z2 = 0;
-//		    printk("!! Skipped sample Dy = %d\n",yvals[i]- yvals[i-1]); //!!!
-		    break;
-		  }
-		}
 	}
 	*y = ysum;
 	*x = xsum;
@@ -365,14 +320,13 @@ static irqreturn_t titsc_irq(int irq, void *dev)
 			z *= ts_dev->x_plate_resistance;
 			z /= z2;
 			z = (z + 2047) >> 12;
-			
+
 			if (z <= MAX_12BIT) {
 				input_report_abs(input_dev, ABS_X, x);
 				input_report_abs(input_dev, ABS_Y, y);
 				input_report_abs(input_dev, ABS_PRESSURE, z);
 				input_report_key(input_dev, BTN_TOUCH, 1);
 				input_sync(input_dev);
-//				 printk("x=%d y=%d z=%d\n",x,y,z); //!!!
 			}
 		}
 		irqclr |= IRQENB_FIFO0THRES;
