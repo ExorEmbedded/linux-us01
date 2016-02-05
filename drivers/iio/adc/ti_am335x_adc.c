@@ -77,7 +77,7 @@ static u32 get_adc_chan_step_mask(struct tiadc_device *adc_dev,
 static void tiadc_step_config(struct tiadc_device *adc_dev)
 {
 	unsigned int stepconfig;
-	int i, steps;
+	int i, steps = 0;
 
 	/*
 	 * There are 16 configurable steps and 8 analog input
@@ -89,7 +89,6 @@ static void tiadc_step_config(struct tiadc_device *adc_dev)
 	 * needs to be given to ADC to digitalize data.
 	 */
 
-	steps = TOTAL_STEPS - adc_dev->channels;
 	stepconfig = STEPCONFIG_AVG_16 | STEPCONFIG_FIFO1;
 
 	for (i = 0; i < adc_dev->channels; i++) {
