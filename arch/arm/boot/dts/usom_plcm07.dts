@@ -538,7 +538,7 @@
 	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&mmc1_pins_default>;
 	pinctrl-1 = <&mmc1_pins_sleep>;
-	cd-gpios = <&pca9555 0 0>; 
+//	cd-gpios = <&pca9555 0 0>; 
 };
 
 &mmc2 {
