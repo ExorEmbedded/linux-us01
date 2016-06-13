@@ -210,6 +210,7 @@
 			pinctrl-single,pins = <
 				0x94 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_5 */
 				0x88 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_2 */
+				0x8c (PIN_OUTPUT_PULLDOWN | MUX_MODE7)  /* gpio2_1 */
 			>;
 		};
 
@@ -217,8 +218,12 @@
 			pinctrl-single,pins = <
 				0x94 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_5 */
 				0x88 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_2 */
+				0x8c (PIN_OUTPUT_PULLDOWN | MUX_MODE7)  /* gpio2_1 */
 			>;
 		};
+
+
+
 	};
 
 	ocp {
@@ -384,6 +389,12 @@
 		led@2 {
 			label = "us01:fault:usr0";
 			gpios = <&gpio2 5 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
+
+		led@3 {
+			label = "spi:master";
+			gpios = <&gpio2 1 GPIO_ACTIVE_HIGH>;
 			default-state = "off";
 		};
 	};
