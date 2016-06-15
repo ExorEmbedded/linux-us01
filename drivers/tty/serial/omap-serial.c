@@ -164,6 +164,8 @@ struct uart_omap_port {
 	u32			features;
 
 	int			rts_gpio;
+	int			mode_gpio;    /* If a valid gpio is mapped here, it means we have a programmable RS485/RS232 phy */
+	int			rxen_gpio;    /* If a valid gpio is mapped here, we will use it for disabling the RX echo while in RS485 mode */
 
 	struct pm_qos_request	pm_qos_request;
 	u32			latency;
@@ -339,6 +341,10 @@ static void serial_omap_stop_tx(struct uart_port *port)
 
 	if ((port->rs485.flags & SER_RS485_ENABLED) &&
 	    !(port->rs485.flags & SER_RS485_RX_DURING_TX)) {
+
+		//RX enable by using the prg phy dedicated gpio pin
+		if (gpio_is_valid(up->rxen_gpio))
+			gpio_set_value(up->rxen_gpio, 1);
 		/*
 		 * Empty the RX FIFO, we are not interested in anything
 		 * received during the half-duplex transmission.
@@ -426,11 +432,33 @@ static void serial_omap_start_tx(struct uart_port *port)
 				mdelay(port->rs485.delay_rts_before_send);
 		}
 	}
+	else
+	{
+		/*
+		* If we are in RS232 mode and we have a programmable phy, enable the TX if not yet done.
+		*/
+		if (gpio_is_valid(up->mode_gpio))
+		{
+			if (gpio_is_valid(up->rts_gpio))
+			{
+				res = (port->rs485.flags & SER_RS485_RTS_ON_SEND) ? 1 : 0;
+				if (gpio_get_value(up->rts_gpio) != res)
+				{
+					gpio_set_value(up->rts_gpio, 1);
+				}
+			}
+		}
+	}
 
 	if ((port->rs485.flags & SER_RS485_ENABLED) &&
 	    !(port->rs485.flags & SER_RS485_RX_DURING_TX))
+	{
+		//RX disable by using the prg phy dedicated gpio pin
+		if (gpio_is_valid(up->rxen_gpio))
+			gpio_set_value(up->rxen_gpio, 0);
 		serial_omap_stop_rx(port);
 
+	}
 	serial_omap_enable_ier_thri(up);
 	pm_runtime_mark_last_busy(up->dev);
 	pm_runtime_put_autosuspend(up->dev);
@@ -1370,6 +1398,21 @@ serial_omap_config_rs485(struct uart_port *port, struct serial_rs485 *rs485conf)
 	} else
 		port->rs485.flags &= ~SER_RS485_ENABLED;
 
+	/*
+	 * If we have a programmable phy, set the mode accordingly
+	 */
+	if (gpio_is_valid(up->mode_gpio))
+	{
+		if(port->rs485.flags & SER_RS485_ENABLED)
+			gpio_set_value(up->mode_gpio, 1);
+		else
+			gpio_set_value(up->mode_gpio, 0);
+	}
+
+	//RX enable by using the prg phy dedicated gpio pin
+	if (gpio_is_valid(up->rxen_gpio))
+		gpio_set_value(up->rxen_gpio, 1);
+
 	/* Enable interrupts */
 	up->ier = mode;
 	serial_out(up, UART_IER, up->ier);
@@ -1549,6 +1592,8 @@ static int serial_omap_probe_rs485(struct uart_omap_port *up,
 
 	rs485conf->flags = 0;
 	up->rts_gpio = -EINVAL;
+	up->mode_gpio = -EINVAL;
+	up->rxen_gpio = -EINVAL;
 
 	if (!np)
 		return 0;
@@ -1574,6 +1619,39 @@ static int serial_omap_probe_rs485(struct uart_omap_port *up,
 		up->rts_gpio = -EINVAL;
 	}
 
+
+	/* check for mode gpio, which is used to switch from RS485 <-> RS232 on programmable phys */
+	up->mode_gpio = of_get_named_gpio(np, "mode-gpio", 0);
+	if (gpio_is_valid(up->mode_gpio))
+	{
+		ret = gpio_request(up->mode_gpio, "omap-serial");
+		if (ret < 0)
+			return ret;
+		ret = gpio_direction_output(up->mode_gpio,0);
+		if (ret < 0)
+			return ret;
+	}
+	else
+	{
+		up->mode_gpio = -EINVAL;
+	}
+
+	/* check for rxen gpio, which is used to enable/disable the rx on programmable phys */
+	up->rxen_gpio = of_get_named_gpio(np, "rxen-gpio", 0);
+	if (gpio_is_valid(up->rxen_gpio))
+	{
+		ret = gpio_request(up->rxen_gpio, "omap-serial");
+		if (ret < 0)
+			return ret;
+		ret = gpio_direction_output(up->rxen_gpio,0);
+		if (ret < 0)
+			return ret;
+
+		gpio_set_value(up->rxen_gpio, 1);
+	}
+	else
+		up->rxen_gpio = -EINVAL;
+
 	if (of_property_read_u32_array(np, "rs485-rts-delay",
 				    rs485_delay, 2) == 0) {
 		rs485conf->delay_rts_before_send = rs485_delay[0];
@@ -1584,8 +1662,12 @@ static int serial_omap_probe_rs485(struct uart_omap_port *up,
 		rs485conf->flags |= SER_RS485_RX_DURING_TX;
 
 	if (of_property_read_bool(np, "linux,rs485-enabled-at-boot-time"))
+	{
 		rs485conf->flags |= SER_RS485_ENABLED;
 
+		if (gpio_is_valid(up->mode_gpio))
+			gpio_set_value(up->mode_gpio, 1);
+	}
 	return 0;
 }
 
