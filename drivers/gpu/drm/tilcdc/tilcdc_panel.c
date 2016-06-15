@@ -22,8 +22,10 @@
 #include <video/display_timing.h>
 #include <video/of_display_timing.h>
 #include <video/videomode.h>
+#include <video/displayconfig.h>
 
 #include "tilcdc_drv.h"
+#include <video/display_timing.h>
 
 struct panel_module {
 	struct tilcdc_module base;
@@ -44,6 +46,88 @@ struct panel_encoder {
 	struct panel_module *mod;
 };
 #define to_panel_encoder(x) container_of(x, struct panel_encoder, base)
+
+extern int hw_dispid; //This is an exported variable holding the display id value, if passed from cmdline
+
+void set_timings( struct timing_entry *tms, u32 value )
+{
+    tms->max = value;
+    tms->min = value;
+    tms->typ = value;
+}
+
+void clear_flags( enum display_flags df)
+{
+    df = 0;
+}
+
+void set_flags( enum display_flags df, u32 flag )
+{
+    df |= flag;
+}
+
+struct display_timings *dispid_get_timings(int dispid)
+{
+	int i=0;
+	struct display_timings *disp;
+
+	// Scan the display array to search for the required dispid
+	if(dispid == NODISPLAY)
+		return NULL;
+
+	while((displayconfig[i].dispid != NODISPLAY) && (displayconfig[i].dispid != dispid))
+	    i++;
+
+	if(displayconfig[i].dispid == NODISPLAY)
+	    return NULL;
+
+	disp = kzalloc(sizeof(*disp), GFP_KERNEL);
+	if (!disp) {
+		pr_err("LS could not allocate struct dispLS'\n" );
+		return NULL;
+	}
+	disp->num_timings = 0;
+	disp->native_mode = 0;
+
+	disp->timings = kzalloc(sizeof(struct display_timing *), GFP_KERNEL);
+
+	if (!disp->timings) {
+		pr_err("LS could not allocate timings dispLS'\n" );
+		return NULL;
+	}
+
+	disp->timings[disp->num_timings] = kzalloc(sizeof(*disp->timings[disp->num_timings]), GFP_KERNEL);
+	if (!disp->timings[disp->num_timings]) {
+		pr_err("LS could not allocate timing DT'\n" );
+		return NULL;
+	}
+
+	set_timings( &disp->timings[disp->num_timings]->hactive,        displayconfig[i].rezx );
+	set_timings( &disp->timings[disp->num_timings]->hback_porch,    displayconfig[i].hs_bp );
+	set_timings( &disp->timings[disp->num_timings]->hfront_porch,   displayconfig[i].hs_fp );
+	set_timings( &disp->timings[disp->num_timings]->hsync_len,      displayconfig[i].hs_w );
+
+	set_timings( &disp->timings[disp->num_timings]->vactive,        displayconfig[i].rezy );
+	set_timings( &disp->timings[disp->num_timings]->vback_porch,    displayconfig[i].vs_bp );
+	set_timings( &disp->timings[disp->num_timings]->vfront_porch,   displayconfig[i].vs_fp );
+	set_timings( &disp->timings[disp->num_timings]->vsync_len,      displayconfig[i].vs_w );
+
+	set_timings( &disp->timings[disp->num_timings]->pixelclock,     displayconfig[i].pclk_freq ? KHZ2PICOS(displayconfig[i].pclk_freq) : 0 );
+
+	clear_flags( disp->timings[disp->num_timings]->flags );
+
+	if(displayconfig[i].hs_inv == 0)
+		set_flags( disp->timings[disp->num_timings]->flags, DISPLAY_FLAGS_HSYNC_HIGH);
+
+	if(displayconfig[i].vs_inv == 0)
+		set_flags( disp->timings[disp->num_timings]->flags, DISPLAY_FLAGS_VSYNC_HIGH);
+
+	if(displayconfig[i].pclk_inv == 1)
+		set_flags( disp->timings[disp->num_timings]->flags, DISPLAY_FLAGS_PIXDATA_NEGEDGE);
+	disp->num_timings ++;
+
+	return disp;
+}
 
 
 static void panel_encoder_destroy(struct drm_encoder *encoder)
@@ -403,11 +487,19 @@ static int panel_probe(struct platform_device *pdev)
 	if (IS_ERR(pinctrl))
 		dev_warn(&pdev->dev, "pins are not configured\n");
 
-	panel_mod->timings = of_get_display_timings(node);
-	if (!panel_mod->timings) {
-		dev_err(&pdev->dev, "could not get panel timings\n");
-		ret = -EINVAL;
-		goto fail_free;
+    panel_mod->timings = dispid_get_timings( hw_dispid);
+    if(panel_mod->timings)
+	{
+		dev_info(&pdev->dev, "found display timings entry in EXOR table [%dx%d]\n", panel_mod->timings->timings[0]->hactive.typ, panel_mod->timings->timings[0]->vactive.typ );
+	}
+	else
+	{
+		panel_mod->timings = of_get_display_timings(node);
+		if (!panel_mod->timings) {
+			dev_err(&pdev->dev, "could not get panel timings\n");
+			ret = -EINVAL;
+			goto fail_free;
+		}
 	}
 
 	panel_mod->info = of_get_panel_info(node);
