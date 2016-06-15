@@ -349,6 +349,16 @@
 	status = "okay";
 	clock-frequency = <100000>;
 
+	/* Set OPP50 (0.95V) for VDD core */
+	sleep-sequence = /bits/ 8 <
+		0x02 0x2d 0x25 0x1f /* Set VDD2 to 0.95V */
+	>;
+
+	/* Set OPP100 (1.10V) for VDD core */
+	wake-sequence = /bits/ 8 <
+		0x02 0x2d 0x25 0x2b /* Set VDD2 to 1.1V */
+	>;
+
 	tps: tps@2d {
 		reg = <0x2d>;
 	};
@@ -368,6 +378,15 @@
 &lcdc {
       status = "okay";
 };
+
+&sgx {
+	status = "okay";
+};
+
+&pruss {
+	status = "disabled";
+};
+
 
 &mmc1 {
 	status = "okay";
