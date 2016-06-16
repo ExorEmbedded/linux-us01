@@ -34,6 +34,10 @@
 #define SEQ_SETTLE		275
 #define MAX_12BIT		((1 << 12) - 1)
 
+#define FUZZ_X			16
+#define FUZZ_Y			16
+#define FUZZ_Z			4
+
 static const int config_pins[] = {
 	STEPCONFIG_XPP,
 	STEPCONFIG_XNN,
@@ -238,6 +242,12 @@ static void titsc_read_coordinates(struct titsc *ts_dev,
 	 * readouts, sort the co-ordinate samples, drop
 	 * min and max values and report the average of
 	 * remaining values.
+	 *
+	 * In case of 4 or more readouts, if a sample
+	 * is "nearly" 0 or MAX_12BIT or we have an
+	 * excessive difference (noise) among samples
+	 * z1 and z2 are seto to 0 to invalidate
+	 * this set of coordinates.
 	 */
 	if (creads <=  3) {
 		for (i = 0; i < creads; i++) {
@@ -257,6 +267,40 @@ static void titsc_read_coordinates(struct titsc *ts_dev,
 		}
 		ysum /= creads - 2;
 		xsum /= creads - 2;
+
+		for (i = 0; i < creads; i++)
+		{
+		  if( (xvals[i] < FUZZ_X) || (xvals[i] >  (MAX_12BIT - FUZZ_X)))
+		  {
+		    *z1 = 0;
+		    *z2 = 0;
+		    break;
+		  }
+
+		  if( (yvals[i] < FUZZ_Y) || (yvals[i] >  (MAX_12BIT - FUZZ_Y)))
+		  {
+		    *z1 = 0;
+		    *z2 = 0;
+		    break;
+		  }
+
+		  if((i > 1) && (i < (creads - 1)))
+		  {
+		    if( (xvals[i] - xvals[i-1]) > 2 * FUZZ_X)
+		    {
+		      *z1 = 0;
+		      *z2 = 0;
+		      break;
+		    }
+
+		    if( (yvals[i] - yvals[i-1]) > 2 * FUZZ_Y)
+		    {
+		      *z1 = 0;
+		      *z2 = 0;
+		      break;
+		    }
+		  }
+		}
 	}
 	*y = ysum;
 	*x = xsum;
@@ -268,11 +312,14 @@ static irqreturn_t titsc_irq(int irq, void *dev)
 	struct input_dev *input_dev = ts_dev->input;
 	unsigned int fsm, status, irqclr = 0;
 	unsigned int x = 0, y = 0;
-	unsigned int z1, z2, z;
+	unsigned int z1, z2, z, tmp;
+	unsigned int max_rt;
 
 	status = titsc_readl(ts_dev, REG_RAWIRQSTATUS);
 	if (status & IRQENB_HW_PEN) {
 		ts_dev->pen_down = true;
+		titsc_writel(ts_dev, REG_IRQWAKEUP, 0x00);
+		titsc_writel(ts_dev, REG_IRQCLR, IRQENB_HW_PEN);
 		irqclr |= IRQENB_HW_PEN;
 	}
 
@@ -306,13 +353,22 @@ static irqreturn_t titsc_irq(int irq, void *dev)
 			 * Resistance(touch) = x plate resistance *
 			 * x postion/4096 * ((z2 / z1) - 1)
 			 */
+			if(z2 > z1)
+			{
+			  tmp=z2;
+			  z2=z1;
+			  z1=tmp;
+			}
+
 			z = z1 - z2;
 			z *= x;
 			z *= ts_dev->x_plate_resistance;
 			z /= z2;
 			z = (z + 2047) >> 12;
 
-			if (z <= MAX_12BIT) {
+			max_rt = (3 * ts_dev->x_plate_resistance) / 2;
+
+			if (z <= max_rt) {
 				input_report_abs(input_dev, ABS_X, x);
 				input_report_abs(input_dev, ABS_Y, y);
 				input_report_abs(input_dev, ABS_PRESSURE, z);
@@ -414,6 +470,8 @@ static int titsc_probe(struct platform_device *pdev)
 		goto err_free_mem;
 	}
 
+	memset(ts_dev, 0, sizeof(struct titsc));
+
 	tscadc_dev->tsc = ts_dev;
 	ts_dev->mfd_tscadc = tscadc_dev;
 	ts_dev->input = input_dev;
@@ -449,9 +507,9 @@ static int titsc_probe(struct platform_device *pdev)
 	input_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
 	input_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
 
-	input_set_abs_params(input_dev, ABS_X, 0, MAX_12BIT, 0, 0);
-	input_set_abs_params(input_dev, ABS_Y, 0, MAX_12BIT, 0, 0);
-	input_set_abs_params(input_dev, ABS_PRESSURE, 0, MAX_12BIT, 0, 0);
+	input_set_abs_params(input_dev, ABS_X, 0, MAX_12BIT, FUZZ_X, 0);
+	input_set_abs_params(input_dev, ABS_Y, 0, MAX_12BIT, FUZZ_Y, 0);
+	input_set_abs_params(input_dev, ABS_PRESSURE, 0, MAX_12BIT, FUZZ_Z, 0);
 
 	/* register to the input system */
 	err = input_register_device(input_dev);

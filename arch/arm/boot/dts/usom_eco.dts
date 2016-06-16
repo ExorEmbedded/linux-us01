@@ -234,7 +234,6 @@
 		>;
 	};
 
-
 	user_leds_default: user_leds_default {
 		pinctrl-single,pins = <
 			0x94 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_5 */

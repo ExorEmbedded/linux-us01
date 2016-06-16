@@ -108,7 +108,7 @@
 /* Charge delay */
 #define CHARGEDLY_OPEN_MASK	(0x3FFFF << 0)
 #define CHARGEDLY_OPEN(val)	((val) << 0)
-#define CHARGEDLY_OPENDLY	CHARGEDLY_OPEN(0x400)
+#define CHARGEDLY_OPENDLY	CHARGEDLY_OPEN(0xB000)
 
 /* Control register */
 #define CNTRLREG_TSCSSENB	BIT(0)
