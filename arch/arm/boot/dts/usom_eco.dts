@@ -387,6 +387,17 @@
 	status = "disabled";
 };
 
+&tscadc {
+	status = "okay";
+	tsc {
+		ti,wires = <4>;
+		ti,x-plate-resistance = <600>;
+		ti,coordinate-readouts = <5>;
+		ti,wire-config = <0x00 0x11 0x22 0x33>;
+		ti,charge-delay = <0x10000>;
+	};
+};
+
 &mmc1 {
 	status = "okay";
 	vmmc-supply = <&vmmc_reg>;

@@ -56,16 +56,6 @@ void set_timings( struct timing_entry *tms, u32 value )
     tms->typ = value;
 }
 
-void clear_flags( enum display_flags df)
-{
-    df = 0;
-}
-
-void set_flags( enum display_flags df, u32 flag )
-{
-    df |= flag;
-}
-
 struct display_timings *dispid_get_timings(int dispid)
 {
 	int i=0;
@@ -112,18 +102,23 @@ struct display_timings *dispid_get_timings(int dispid)
 	set_timings( &disp->timings[disp->num_timings]->vfront_porch,   displayconfig[i].vs_fp );
 	set_timings( &disp->timings[disp->num_timings]->vsync_len,      displayconfig[i].vs_w );
 
-	set_timings( &disp->timings[disp->num_timings]->pixelclock,     displayconfig[i].pclk_freq ? KHZ2PICOS(displayconfig[i].pclk_freq) : 0 );
+	set_timings( &disp->timings[disp->num_timings]->pixelclock,     displayconfig[i].pclk_freq ? (displayconfig[i].pclk_freq * 1000) : 0 );
 
-	clear_flags( disp->timings[disp->num_timings]->flags );
+	disp->timings[disp->num_timings]->flags = 0;
 
-	if(displayconfig[i].hs_inv == 0)
-		set_flags( disp->timings[disp->num_timings]->flags, DISPLAY_FLAGS_HSYNC_HIGH);
+	if(displayconfig[i].hs_inv == 1)
+		disp->timings[disp->num_timings]->flags |= DISPLAY_FLAGS_HSYNC_HIGH;
+	else
+		disp->timings[disp->num_timings]->flags |= DISPLAY_FLAGS_HSYNC_LOW;
 
-	if(displayconfig[i].vs_inv == 0)
-		set_flags( disp->timings[disp->num_timings]->flags, DISPLAY_FLAGS_VSYNC_HIGH);
+	if(displayconfig[i].vs_inv == 1)
+		disp->timings[disp->num_timings]->flags |= DISPLAY_FLAGS_VSYNC_HIGH;
+	else
+		disp->timings[disp->num_timings]->flags |= DISPLAY_FLAGS_VSYNC_LOW;
 
 	if(displayconfig[i].pclk_inv == 1)
-		set_flags( disp->timings[disp->num_timings]->flags, DISPLAY_FLAGS_PIXDATA_NEGEDGE);
+		disp->timings[disp->num_timings]->flags |= DISPLAY_FLAGS_PIXDATA_NEGEDGE;
+
 	disp->num_timings ++;
 
 	return disp;
@@ -490,7 +485,13 @@ static int panel_probe(struct platform_device *pdev)
     panel_mod->timings = dispid_get_timings( hw_dispid);
     if(panel_mod->timings)
 	{
-		dev_info(&pdev->dev, "found display timings entry in EXOR table [%dx%d]\n", panel_mod->timings->timings[0]->hactive.typ, panel_mod->timings->timings[0]->vactive.typ );
+		dev_info(&pdev->dev, "found display timings entry in EXOR table [%dx%d] Flags: 0x%X num_timings %d native_mode %d pixelclock %d\n", panel_mod->timings->timings[0]->hactive.typ,
+																								panel_mod->timings->timings[0]->vactive.typ,
+																								panel_mod->timings->timings[0]->flags,
+																								panel_mod->timings->num_timings,
+																								panel_mod->timings->native_mode,
+																								panel_mod->timings->timings[0]->pixelclock.typ
+																								);
 	}
 	else
 	{
@@ -500,6 +501,13 @@ static int panel_probe(struct platform_device *pdev)
 			ret = -EINVAL;
 			goto fail_free;
 		}
+		dev_info(&pdev->dev, "found display timings entry in DTS [%dx%d] Flags: 0x%X num_timings %d native_mode %d pixelclock %d\n", panel_mod->timings->timings[0]->hactive.typ,
+																								panel_mod->timings->timings[0]->vactive.typ,
+																								panel_mod->timings->timings[0]->flags,
+																								panel_mod->timings->num_timings,
+																								panel_mod->timings->native_mode,
+																								panel_mod->timings->timings[0]->pixelclock.typ
+																								);
 	}
 
 	panel_mod->info = of_get_panel_info(node);
