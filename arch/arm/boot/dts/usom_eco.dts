@@ -358,6 +358,16 @@
 		0x02 0x2d 0x25 0x2b /* Set VDD2 to 1.1V */
 	>;
 
+	seeprom0:seeprom0@54 {
+		compatible = "atmel,24c02";
+		reg = <0x54>;
+	};
+
+	seeprom1:seeprom1@50 {
+		compatible = "atmel,24c02";
+		reg = <0x50>;
+	};
+
 	m41t83:m41t83@68 {
 		compatible = "stm,m41t83";
 		reg = <0x68>;
