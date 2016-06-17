@@ -358,6 +358,11 @@
 		0x02 0x2d 0x25 0x2b /* Set VDD2 to 1.1V */
 	>;
 
+	m41t83:m41t83@68 {
+		compatible = "stm,m41t83";
+		reg = <0x68>;
+	};
+
 	tps: tps@2d {
 		reg = <0x2d>;
 	};
@@ -407,12 +412,12 @@
 };
 
 &mmc2 {
-  vmmc-supply = <&vmmc_reg>;
-  pinctrl-names = "default";
-  pinctrl-0 = <&emmc_pins>;
-  bus-width = <4>;
-  ti,non-removable;
-  status = "okay";
+	vmmc-supply = <&vmmc_reg>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&emmc_pins>;
+	bus-width = <4>;
+	ti,non-removable;
+	status = "okay";
 };
 
 &usb {
