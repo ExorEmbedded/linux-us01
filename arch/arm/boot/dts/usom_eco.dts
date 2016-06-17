@@ -99,8 +99,15 @@
 		};
 	};
 
-
+	working_hours {
+		compatible = "working_hours";
+		eeprom = <&seeprom0>;
+		backlight = <&pwm_bl00>;
+		rtcnvram = <&m41t83>;
+		status = "okay";
+	};
 };
+
 
 &am33xx_pinmux {
 	pinctrl-names = "default";
