@@ -106,12 +106,23 @@
 		rtcnvram = <&m41t83>;
 		status = "okay";
 	};
+
+	pwm: omap-pwm {
+		compatible = "ti,omap-pwm";
+		ti,timers = <&timer6>;
+		#pwm-cells = <3>;
+	};
+
+	beeper {
+		compatible = "pwm-beeper";
+		pwms = <&pwm 0 50000 0>;
+	};
 };
 
 
 &am33xx_pinmux {
 	pinctrl-names = "default";
-	pinctrl-0 = <&lcd_pins_enable &phyuart_ctrl_pins>;
+	pinctrl-0 = <&lcd_pins_enable &phyuart_ctrl_pins &buzzer_pins_enable>;
 
 	i2c0_pins: pinmux_i2c0_pins {
 		pinctrl-single,pins = <
@@ -322,6 +333,12 @@
 			/* MDIO reset value */
 			0x148 (PIN_INPUT_PULLDOWN | MUX_MODE7)
 			0x14c (PIN_INPUT_PULLDOWN | MUX_MODE7)
+		>;
+	};
+
+	buzzer_pins_enable: pinmux_buzzer_pins_enable {
+		pinctrl-single,pins = <
+			0x98 0x02	/* gpmc_wen: BUZZER / timer6 OUTPUT | MODE2 */
 		>;
 	};
 
