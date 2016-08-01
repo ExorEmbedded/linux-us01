@@ -187,6 +187,7 @@ dtb-$(CONFIG_ARCH_OMAP2PLUS) += omap2420-h4.dtb \
 	usom_eco.dtb \
 	usom_ecosys.dtb \
 	usom_plcm07.dtb \
+	usom_etop705.dtb \
 	am335x-evmsk.dtb \
 	am335x-bone.dtb \
 	am335x-boneblack.dtb \
