@@ -151,16 +151,20 @@ enum {
 #define OMAP_I2C_SCLH_HSSCLH	8
 
 /* I2C System Test Register (OMAP_I2C_SYSTEST): */
-#ifdef DEBUG
 #define OMAP_I2C_SYSTEST_ST_EN		(1 << 15)	/* System test enable */
 #define OMAP_I2C_SYSTEST_FREE		(1 << 14)	/* Free running mode */
 #define OMAP_I2C_SYSTEST_TMODE_MASK	(3 << 12)	/* Test mode select */
 #define OMAP_I2C_SYSTEST_TMODE_SHIFT	(12)		/* Test mode select */
+/* Functional mode */
+#define OMAP_I2C_SYSTEST_SCL_I_FUNC     (1 << 8)        /* SCL line input value */
+#define OMAP_I2C_SYSTEST_SCL_O_FUNC     (1 << 7)        /* SCL line output value */
+#define OMAP_I2C_SYSTEST_SDA_I_FUNC     (1 << 6)        /* SDA line input value */
+#define OMAP_I2C_SYSTEST_SDA_O_FUNC     (1 << 5)        /* SDA line output value */
+/* SDA/SCL IO mode */
 #define OMAP_I2C_SYSTEST_SCL_I		(1 << 3)	/* SCL line sense in */
 #define OMAP_I2C_SYSTEST_SCL_O		(1 << 2)	/* SCL line drive out */
 #define OMAP_I2C_SYSTEST_SDA_I		(1 << 1)	/* SDA line sense in */
 #define OMAP_I2C_SYSTEST_SDA_O		(1 << 0)	/* SDA line drive out */
-#endif
 
 /* OCP_SYSSTATUS bit definitions */
 #define SYSS_RESETDONE_MASK		(1 << 0)
@@ -461,8 +465,8 @@ static int omap_i2c_wait_for_bb(struct omap_i2c_dev *dev)
 	timeout = jiffies + OMAP_I2C_TIMEOUT;
 	while (omap_i2c_read_reg(dev, OMAP_I2C_STAT_REG) & OMAP_I2C_STAT_BB) {
 		if (time_after(jiffies, timeout)) {
-			dev_warn(dev->dev, "timeout waiting for bus ready\n");
-			return -ETIMEDOUT;
+			dev_err(dev->dev, "communication timeout. trying to recover bus\n");
+			return i2c_recover_bus(&dev->adapter);
 		}
 		msleep(1);
 	}
@@ -899,6 +903,7 @@ omap_i2c_isr_thread(int this_irq, void *dev_id)
 	unsigned long flags;
 	u16 bits;
 	u16 stat;
+	u16 saddr;
 	int err = 0, count = 0;
 
 	spin_lock_irqsave(&dev->lock, flags);
@@ -906,6 +911,7 @@ omap_i2c_isr_thread(int this_irq, void *dev_id)
 		bits = omap_i2c_read_reg(dev, OMAP_I2C_IE_REG);
 		stat = omap_i2c_read_reg(dev, OMAP_I2C_STAT_REG);
 		stat &= bits;
+		saddr = omap_i2c_read_reg(dev, OMAP_I2C_SA_REG);
 
 		/* If we're in receiver mode, ignore XDR/XRDY */
 		if (dev->receiver)
@@ -986,6 +992,14 @@ omap_i2c_isr_thread(int this_irq, void *dev_id)
 			if (dev->fifo_size)
 				num_bytes = dev->buf_len;
 
+			/* Dirty patch to comply with clock strecthing of the MCP23016 of the eTOP705; this chip is supposed to be eventually at slave address 0x20 
+			   NOTE: This is a blocking delay (atomic context) but, since the MCP23016 is used only at system startup/configuration, it does not affect 
+			         performances during normal operation. */
+			if(saddr == 0x20)
+			{
+			  udelay(110);
+			}
+
 			ret = omap_i2c_transmit_data(dev, num_bytes, true);
 			if (ret < 0)
 				break;
@@ -1000,6 +1014,14 @@ omap_i2c_isr_thread(int this_irq, void *dev_id)
 
 			if (dev->threshold)
 				num_bytes = dev->threshold;
+
+			/* Dirty patch to comply with clock strecthing of the MCP23016 of the eTOP705; this chip is supposed to be eventually at slave address 0x20 
+			   NOTE: This is a blocking delay (atomic context) but, since the MCP23016 is used only at system startup/configuration, it does not affect 
+			         performances during normal operation. */
+			if(saddr == 0x20)
+			{
+			  udelay(110);
+			}
 
 			ret = omap_i2c_transmit_data(dev, num_bytes, false);
 			if (ret < 0)
@@ -1070,6 +1092,115 @@ MODULE_DEVICE_TABLE(of, omap_i2c_of_match);
 #define OMAP_I2C_REV_SCHEME_1_MINOR(rev) (rev & 0x1f)
 #define OMAP_I2C_SCHEME_0		0
 #define OMAP_I2C_SCHEME_1		1
+
+static int omap_i2c_get_scl(struct i2c_adapter *adap)
+{
+	struct omap_i2c_dev *dev = i2c_get_adapdata(adap);
+	u32 reg;
+
+	reg = omap_i2c_read_reg(dev, OMAP_I2C_SYSTEST_REG);
+
+	return reg & OMAP_I2C_SYSTEST_SCL_I_FUNC;
+}
+
+static int omap_i2c_get_sda(struct i2c_adapter *adap)
+{
+	struct omap_i2c_dev *dev = i2c_get_adapdata(adap);
+	u32 reg;
+
+	reg = omap_i2c_read_reg(dev, OMAP_I2C_SYSTEST_REG);
+
+	return reg & OMAP_I2C_SYSTEST_SDA_I_FUNC;
+}
+
+static void omap_i2c_set_scl(struct i2c_adapter *adap, int val)
+{
+	struct omap_i2c_dev *dev = i2c_get_adapdata(adap);
+	u32 reg;
+
+	reg = omap_i2c_read_reg(dev, OMAP_I2C_SYSTEST_REG);
+	if (val)
+		reg |= OMAP_I2C_SYSTEST_SCL_O;
+	else
+		reg &= ~OMAP_I2C_SYSTEST_SCL_O;
+	omap_i2c_write_reg(dev, OMAP_I2C_SYSTEST_REG, reg);
+}
+
+static void omap_i2c_prepare_recovery(struct i2c_bus_recovery_info *bri)
+{
+	struct i2c_adapter* adap = (struct i2c_adapter*)bri;
+	struct omap_i2c_dev *dev = i2c_get_adapdata(adap);
+	u32 reg;
+
+	reg = omap_i2c_read_reg(dev, OMAP_I2C_SYSTEST_REG);
+	reg |= OMAP_I2C_SYSTEST_ST_EN;
+	omap_i2c_write_reg(dev, OMAP_I2C_SYSTEST_REG, reg);
+}
+
+static void omap_i2c_unprepare_recovery(struct i2c_bus_recovery_info *bri)
+{
+	struct i2c_adapter* adap = (struct i2c_adapter*)bri;
+	struct omap_i2c_dev *dev = i2c_get_adapdata(adap);
+	u32 reg;
+
+	reg = omap_i2c_read_reg(dev, OMAP_I2C_SYSTEST_REG);
+	reg &= ~OMAP_I2C_SYSTEST_ST_EN;
+	omap_i2c_write_reg(dev, OMAP_I2C_SYSTEST_REG, reg);
+}
+
+#define OMAP_I2C_RECOVERY_NDELAY		5000
+#define OMAP_I2C_RECOVERY_CLK_CNT	9
+
+static int omap_i2c_generic_recovery(struct i2c_adapter *adap)
+{
+	struct i2c_bus_recovery_info *bri = adap->bus_recovery_info;
+	int i = 0, val = 1, ret = 0;
+
+	if (bri->prepare_recovery)
+		bri->prepare_recovery((struct i2c_bus_recovery_info *)adap);
+
+	/*
+	 * By this time SCL is high, as we need to give 9 falling-rising edges
+	 */
+	while (i++ < OMAP_I2C_RECOVERY_CLK_CNT * 2) {
+		if (val) {
+			/* Break if SDA is high */
+			if (bri->get_sda && bri->get_sda(adap))
+					break;
+			/* SCL shouldn't be low here */
+			if (!bri->get_scl(adap)) {
+				dev_err(&adap->dev,
+					"SCL is stuck low, exit recovery\n");
+				ret = -EBUSY;
+				break;
+			}
+		}
+
+		val = !val;
+		bri->set_scl(adap, val);
+		ndelay(OMAP_I2C_RECOVERY_NDELAY);
+	}
+
+	if (bri->unprepare_recovery)
+		bri->unprepare_recovery((struct i2c_bus_recovery_info *)adap);
+
+	return ret;
+}
+
+int omap_i2c_generic_scl_recovery(struct i2c_adapter *adap)
+{
+	adap->bus_recovery_info->set_scl(adap, 1);
+	return omap_i2c_generic_recovery(adap);
+}
+
+static struct i2c_bus_recovery_info omap_i2c_bus_recovery_info = {
+	.get_scl			= omap_i2c_get_scl,
+	.get_sda			= omap_i2c_get_sda,
+	.set_scl			= omap_i2c_set_scl,
+	.prepare_recovery		= omap_i2c_prepare_recovery,
+	.unprepare_recovery	= omap_i2c_unprepare_recovery,
+	.recover_bus		= omap_i2c_generic_scl_recovery,
+};
 
 static int
 omap_i2c_probe(struct platform_device *pdev)
@@ -1222,7 +1353,8 @@ omap_i2c_probe(struct platform_device *pdev)
 	adap->algo = &omap_i2c_algo;
 	adap->dev.parent = &pdev->dev;
 	adap->dev.of_node = pdev->dev.of_node;
-
+	adap->bus_recovery_info = &omap_i2c_bus_recovery_info;
+	
 	/* i2c device drivers may be active on return from add_adapter() */
 	adap->nr = pdev->id;
 	r = i2c_add_numbered_adapter(adap);
