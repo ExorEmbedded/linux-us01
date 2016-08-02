@@ -19,6 +19,7 @@
 #include <linux/irqdomain.h>
 #include <linux/i2c.h>
 #include <linux/platform_data/pca953x.h>
+#include <linux/reset.h>
 #include <linux/slab.h>
 #ifdef CONFIG_OF_GPIO
 #include <linux/of_platform.h>
@@ -99,17 +100,24 @@ struct pca953x_chip {
 	int	chip_type;
 };
 
+#define PCA_MAXRETRYNUM 5
+
 static int pca953x_read_single(struct pca953x_chip *chip, int reg, u32 *val,
 				int off)
 {
 	int ret;
 	int bank_shift = fls((chip->gpio_chip.ngpio - 1) / BANK_SZ);
 	int offset = off / BANK_SZ;
+	int retrycnt = 0;
+retry:	
+	usleep_range(150,200); //Delay required for MCP23016 chip
 
-	udelay(110); /* For mcp23016 timings */
 	ret = i2c_smbus_read_byte_data(chip->client,
 				(reg << bank_shift) + offset);
 	*val = ret;
+	
+	if((ret < 0) && (retrycnt++ < PCA_MAXRETRYNUM))
+	  goto retry;
 
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed reading register\n");
@@ -125,10 +133,15 @@ static int pca953x_write_single(struct pca953x_chip *chip, int reg, u32 val,
 	int ret = 0;
 	int bank_shift = fls((chip->gpio_chip.ngpio - 1) / BANK_SZ);
 	int offset = off / BANK_SZ;
+	int retrycnt = 0;
+retry:	
+	usleep_range(150,200); //Delay required for MCP23016 chip
 	
-	udelay(110); /* For mcp23016 timings */
 	ret = i2c_smbus_write_byte_data(chip->client,
 					(reg << bank_shift) + offset, val);
+
+	if((ret < 0) && (retrycnt++ < PCA_MAXRETRYNUM))
+	  goto retry;
 
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed writing register\n");
@@ -141,7 +154,10 @@ static int pca953x_write_single(struct pca953x_chip *chip, int reg, u32 val,
 static int pca953x_write_regs(struct pca953x_chip *chip, int reg, u8 *val)
 {
 	int ret = 0;
-
+	int retrycnt = 0;
+retry:	
+	usleep_range(150,200); //Delay required for MCP23016 chip
+	
 	if (chip->gpio_chip.ngpio <= 8)
 		ret = i2c_smbus_write_byte_data(chip->client, reg, *val);
 	else if (chip->gpio_chip.ngpio >= 24) {
@@ -152,13 +168,8 @@ static int pca953x_write_regs(struct pca953x_chip *chip, int reg, u8 *val)
 	} else {
 		switch (chip->chip_type) {
 		case PCA953X_TYPE:
-			/* We use 2 8bit data write with 110us delay in between to be compatible with mcp23016 timings */
-			udelay(110);
-			ret = i2c_smbus_write_byte_data(chip->client, reg << 1,	val[0]);
-			if (ret < 0)
-				break;
-			udelay(110);
-			ret = i2c_smbus_write_byte_data(chip->client, (reg << 1) + 1, val[1]);
+			ret = i2c_smbus_write_word_data(chip->client,
+							reg << 1, (u16) *val);
 			break;
 		case PCA957X_TYPE:
 			ret = i2c_smbus_write_byte_data(chip->client, reg << 1,
@@ -172,6 +183,9 @@ static int pca953x_write_regs(struct pca953x_chip *chip, int reg, u8 *val)
 		}
 	}
 
+	if((ret < 0) && (retrycnt++ < PCA_MAXRETRYNUM))
+	  goto retry;
+
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed writing register\n");
 		return ret;
@@ -183,6 +197,9 @@ static int pca953x_write_regs(struct pca953x_chip *chip, int reg, u8 *val)
 static int pca953x_read_regs(struct pca953x_chip *chip, int reg, u8 *val)
 {
 	int ret;
+	int retrycnt = 0;
+retry:	
+	usleep_range(150,200); //Delay required for MCP23016 chip
 
 	if (chip->gpio_chip.ngpio <= 8) {
 		ret = i2c_smbus_read_byte_data(chip->client, reg);
@@ -194,16 +211,14 @@ static int pca953x_read_regs(struct pca953x_chip *chip, int reg, u8 *val)
 					(reg << bank_shift) | REG_ADDR_AI,
 					NBANK(chip), val);
 	} else {
-		/* We use 2 8bit data read with 110us delay in between to be compatible with mcp23016 timings*/
-		udelay(110);
-  		ret = i2c_smbus_read_byte_data(chip->client, reg << 1);
+		ret = i2c_smbus_read_word_data(chip->client, reg << 1);
 		val[0] = (u16)ret & 0xFF;
-		if(ret<0) return ret;
-		udelay(110);
-  		ret = i2c_smbus_read_byte_data(chip->client, (reg << 1) + 1);
-		val[1] = (u16)ret & 0xFF;
-
+		val[1] = (u16)ret >> 8;
 	}
+
+	if((ret < 0) && (retrycnt++ < PCA_MAXRETRYNUM))
+	  goto retry;
+
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed reading register\n");
 		return ret;
@@ -375,7 +390,7 @@ static void pca953x_setup_gpio(struct pca953x_chip *chip, int gpios)
 	gc->get = pca953x_gpio_get_value;
 	gc->set = pca953x_gpio_set_value;
 	gc->set_debounce = pca953x_gpio_set_debounce;
-	gc->can_sleep = 1;
+	gc->can_sleep = true;
 
 	gc->base = chip->gpio_start;
 	gc->ngpio = gpios;
@@ -704,17 +719,6 @@ static int device_pca957x_init(struct pca953x_chip *chip, u32 invert)
 	int ret;
 	u8 val[MAX_BANK];
 
-	/* Let every port in proper state, that could save power */
-	memset(val, 0, NBANK(chip));
-	pca953x_write_regs(chip, PCA957X_PUPD, val);
-	memset(val, 0xFF, NBANK(chip));
-	pca953x_write_regs(chip, PCA957X_CFG, val);
-	memset(val, 0, NBANK(chip));
-	pca953x_write_regs(chip, PCA957X_OUT, val);
-
-	ret = pca953x_read_regs(chip, PCA957X_IN, val);
-	if (ret)
-		goto out;
 	ret = pca953x_read_regs(chip, PCA957X_OUT, chip->reg_output);
 	if (ret)
 		goto out;
@@ -773,42 +777,23 @@ static int pca953x_probe(struct i2c_client *client,
 
 	mutex_init(&chip->i2c_lock);
 
+	ret = device_reset(&client->dev);
+	if (ret == -ENODEV)
+		return -EPROBE_DEFER;
+
 	/* initialize cached registers from their original values.
 	 * we can't share this chip with another i2c master.
 	 */
 	pca953x_setup_gpio(chip, id->driver_data & PCA_GPIO_MASK);
 
 	if (chip->chip_type == PCA953X_TYPE)
-	{
 		ret = device_pca953x_init(chip, invert);
-		if (ret) 
-		{
-		  udelay(500);
-		  ret = device_pca953x_init(chip, invert);
-		  if (ret) 
-		  {
-		    udelay(500);
-		    ret = device_pca953x_init(chip, invert);
-		  }
-		}
-	}
 	else
 		ret = device_pca957x_init(chip, invert);
 	if (ret)
 		return ret;
 
 	ret = pca953x_irq_setup(chip, id, irq_base);
-	if (ret)
-	{
-	  udelay(500);
-	  ret = pca953x_irq_setup(chip, id, irq_base);
-	  if (ret)
-	  {
-	    udelay(500);
-	    ret = pca953x_irq_setup(chip, id, irq_base);
-	  }
-	}
-
 	if (ret)
 		return ret;
 
