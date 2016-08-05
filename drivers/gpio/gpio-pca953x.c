@@ -100,7 +100,7 @@ struct pca953x_chip {
 	int	chip_type;
 };
 
-#define PCA_MAXRETRYNUM 5
+#define PCA_MAXRETRYNUM 10
 
 static int pca953x_read_single(struct pca953x_chip *chip, int reg, u32 *val,
 				int off)
@@ -117,7 +117,10 @@ retry:
 	*val = ret;
 	
 	if((ret < 0) && (retrycnt++ < PCA_MAXRETRYNUM))
+	{
+	  usleep_range(5000,8000);
 	  goto retry;
+	}
 
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed reading register\n");
@@ -141,7 +144,10 @@ retry:
 					(reg << bank_shift) + offset, val);
 
 	if((ret < 0) && (retrycnt++ < PCA_MAXRETRYNUM))
+	{
+	  usleep_range(5000,8000);
 	  goto retry;
+	}
 
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed writing register\n");
@@ -184,7 +190,10 @@ retry:
 	}
 
 	if((ret < 0) && (retrycnt++ < PCA_MAXRETRYNUM))
+	{
+	  usleep_range(5000,8000);
 	  goto retry;
+	}
 
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed writing register\n");
@@ -217,7 +226,10 @@ retry:
 	}
 
 	if((ret < 0) && (retrycnt++ < PCA_MAXRETRYNUM))
+	{
+	  usleep_range(5000,8000);
 	  goto retry;
+	}
 
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed reading register\n");
