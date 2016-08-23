@@ -69,6 +69,7 @@ static int plxx_parse_dt(struct device *dev, struct plxx_data *data)
   u32                 eeprom_handle;
   u32                 ioexp_handle;
   int                 ret;
+  u8                  tmp;
 
   /* Parse the DT to find the I2C SEEPROM bindings*/
   ret = of_property_read_u32(node, "eeprom", &eeprom_handle);
@@ -162,6 +163,13 @@ static int plxx_parse_dt(struct device *dev, struct plxx_data *data)
   }
   else
     return -EPROBE_DEFER;
+  
+  //Configure the internal US01 I2C expander (U16, PCA9536) for ttyO1 multiplexing
+  tmp=0x0b;
+  data->ioexp_macc->write(data->ioexp_macc, &tmp, 3, sizeof(u8));
+  msleep(1);
+  tmp = 0x00;
+  data->ioexp_macc->write(data->ioexp_macc, &tmp, 1, sizeof(u8));
   
   return 0;
 }
@@ -303,7 +311,6 @@ static ssize_t func_bit_area_read(struct file *filp, struct kobject *kobj, struc
 static ssize_t eeprom_read(struct file *filp, struct kobject *kobj, struct bin_attribute *attr, char *buf, loff_t off, size_t count)
 {
   struct plxx_data *data = dev_get_drvdata(container_of(kobj, struct device, kobj));
-  int bitIndex;
   int i;
 
   if(count == 0)
@@ -367,7 +374,6 @@ static int UpdatePluginData(struct plxx_data *data)
   int ret = 0;
   int n;
   struct memory_accessor* macc = data->seeprom_macc;  
-  struct memory_accessor* ioexp_macc = data->ioexp_macc;  
 
   gpio_set_value_cansleep(data->sel_gpio, 1);                      //Select the plugin I2C bus
   msleep(1);
@@ -408,17 +414,6 @@ static int UpdatePluginData(struct plxx_data *data)
     if(eeprom_isvalid == false)
     {                                                     //The plugin was detected bus has invalid SEEPROM contents ...
       memset(data->eeprom, 0, SEE_FACTORYSIZE);
-    }
-    
-    // If we have a RS485/422 plugin module (bit #3 in func. area) set it to full duplex
-    if(data->eeprom[SEE_FUNCT_AREA_OFF] & (0x01 << RS422_485_IF_FLAG))
-    {
-      u8 tmp;
-      tmp=0x0e;
-      ioexp_macc->write(ioexp_macc, &tmp, 3, sizeof(u8));
-      msleep(1);
-      tmp=0x00;
-      ioexp_macc->write(ioexp_macc, &tmp, 1, sizeof(u8));
     }
   }
   gpio_set_value_cansleep(data->sel_gpio, 0);                      //Deselect the plugin I2C bus
