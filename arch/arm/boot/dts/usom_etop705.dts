@@ -366,6 +366,7 @@
 		spi0: spi@48030000 {
 			pinctrl-names = "default";
 			pinctrl-0 = <&spi0_pins>;
+			bus-num = <0>;
 
 			status = "okay";
 			
