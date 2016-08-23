@@ -298,15 +298,27 @@ static void serial_omap_stop_tx(struct uart_port *port)
 			return;
 
 		/* if there's no more data to send, turn off rts */
-		if (uart_circ_empty(xmit)) {
-			/* if rts not already disabled */
-			res = (up->rs485.flags & SER_RS485_RTS_AFTER_SEND) ? 1 : 0;
-			if (gpio_get_value(up->rts_gpio) != res) {
-				if (up->rs485.delay_rts_after_send > 0) {
-					mdelay(up->rs485.delay_rts_after_send);
-				}
-				gpio_set_value(up->rts_gpio, res);
-			}
+		if (uart_circ_empty(xmit)) 
+		{
+		  if(gpio_is_valid(up->rts_gpio))
+		  {
+			  /* if rts not already disabled */
+			  res = (up->rs485.flags & SER_RS485_RTS_AFTER_SEND) ? 1 : 0;
+			  if (gpio_get_value(up->rts_gpio) != res) {
+				  if (up->rs485.delay_rts_after_send > 0) {
+					  mdelay(up->rs485.delay_rts_after_send);
+				  }
+				  gpio_set_value(up->rts_gpio, res);
+			  }
+		  }
+		  else
+		  {
+		    //Enabled RS485/422 mode, but no rts_gpio pin available, use RTS native pin
+		    unsigned char tmpmcr;
+		    tmpmcr = serial_in(up, UART_MCR);
+		    tmpmcr &= ~UART_MCR_RTS;
+		    serial_out(up, UART_MCR, tmpmcr);
+		  }
 		}
 	}
 
@@ -394,6 +406,8 @@ static void serial_omap_start_tx(struct uart_port *port)
 	/* handle rs485 */
 	if (up->rs485.flags & SER_RS485_ENABLED)
 	{
+	  if(gpio_is_valid(up->rts_gpio))
+	  {
 		/* if rts not already enabled */
 		res = (up->rs485.flags & SER_RS485_RTS_ON_SEND) ? 1 : 0;
 		if (gpio_get_value(up->rts_gpio) != res) {
@@ -402,6 +416,15 @@ static void serial_omap_start_tx(struct uart_port *port)
 				mdelay(up->rs485.delay_rts_before_send);
 			}
 		}
+	  }
+	  else
+	  {
+	    //Enabled RS485/422 mode, but no rts_gpio pin available, use RTS native pin
+	    unsigned char tmpmcr;
+	    tmpmcr = serial_in(up, UART_MCR);
+	    tmpmcr |= UART_MCR_RTS;
+	    serial_out(up, UART_MCR, tmpmcr);
+	  }
 	}
 	else
 	{
@@ -1366,17 +1389,24 @@ serial_omap_config_rs485(struct uart_port *port, struct serial_rs485 *rs485conf)
 	up->rs485 = *rs485conf;
 
 	/*
-	 * Just as a precaution, only allow rs485
-	 * to be enabled if the gpio pin is valid
+	 * Set initial value of tx_enable pin
+	 * 
 	 */
 	if (gpio_is_valid(up->rts_gpio)) {
-		/* enable / disable rts */
+		/* enable / disable rts_gpio pin */
 		val = (up->rs485.flags & SER_RS485_ENABLED) ?
 			SER_RS485_RTS_AFTER_SEND : SER_RS485_RTS_ON_SEND;
 		val = (up->rs485.flags & val) ? 1 : 0;
 		gpio_set_value(up->rts_gpio, val);
-	} else
-		up->rs485.flags &= ~SER_RS485_ENABLED;
+	} 
+	else if (up->rs485.flags & SER_RS485_ENABLED)
+	{
+	  //Enabled RS485/422 mode, but no rts_gpio pin available, use RTS native pin
+	  unsigned char tmpmcr;
+	  tmpmcr = serial_in(up, UART_MCR);
+	  tmpmcr &= ~UART_MCR_RTS;
+	  serial_out(up, UART_MCR, tmpmcr);
+	}
 	
 	/*
 	 * If we have a programmable phy, set the mode accordingly
