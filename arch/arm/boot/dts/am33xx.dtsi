@@ -762,15 +762,15 @@
 				reg = <0x4a101000 0x100>;
 			};
 
-			cpsw_emac0: slave@4a100200 {
-				/* Filled in by U-Boot */
-				mac-address = [ 00 00 00 00 00 00 ];
-			};
+			//cpsw_emac0: slave@4a100200 {
+			//	/* Filled in by U-Boot */
+			//	mac-address = [ 00 00 00 00 00 00 ];
+			//};
 
-			cpsw_emac1: slave@4a100300 {
-				/* Filled in by U-Boot */
-				mac-address = [ 00 00 00 00 00 00 ];
-			};
+			//cpsw_emac1: slave@4a100300 {
+			//	/* Filled in by U-Boot */
+			//	mac-address = [ 00 00 00 00 00 00 ];
+			//};
 
 			phy_sel: cpsw-phy-sel@44e10650 {
 				compatible = "ti,am3352-cpsw-phy-sel";

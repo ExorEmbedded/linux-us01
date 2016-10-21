@@ -1885,6 +1885,9 @@ static int cpsw_probe_dt(struct cpsw_platform_data *data,
 	if (of_property_read_bool(node, "dual_emac"))
 		data->dual_emac = 1;
 
+	if (of_property_read_bool(node, "only_emac1"))
+		data->only_emac1 = 1;
+
 	/*
 	 * Populate all the child nodes here...
 	 */
@@ -2228,11 +2231,15 @@ static int cpsw_probe(struct platform_device *pdev)
 
 	/* register the network device */
 	SET_NETDEV_DEV(ndev, &pdev->dev);
-	ret = register_netdev(ndev);
-	if (ret) {
-		dev_err(priv->dev, "error registering net device\n");
-		ret = -ENODEV;
-		goto clean_ale_ret;
+
+	if(!priv->data.only_emac1)
+	{
+		ret = register_netdev(ndev);
+		if (ret) {
+			dev_err(priv->dev, "error registering net device\n");
+			ret = -ENODEV;
+			goto clean_ale_ret;
+		}
 	}
 
 	while ((res = platform_get_resource(priv->pdev, IORESOURCE_IRQ, k))) {

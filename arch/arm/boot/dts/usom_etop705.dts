@@ -648,6 +648,16 @@
 	pinctrl-0 = <&cpsw_default>;
 	pinctrl-1 = <&cpsw_sleep>;
 	dual_emac;
+
+	cpsw_emac0: slave@4a100200 {
+		/* Filled in by U-Boot */
+		mac-address = [ 00 00 00 00 00 00 ];
+	};
+
+	cpsw_emac1: slave@4a100300 {
+		/* Filled in by U-Boot */
+		mac-address = [ 00 00 00 00 00 00 ];
+	};
 };
 
 &davinci_mdio {
