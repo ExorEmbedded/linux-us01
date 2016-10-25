@@ -239,6 +239,10 @@
 		  0x04 (PIN_INPUT_PULLUP | MUX_MODE1) /* gpmc_ad1.mmc1_dat1 */
 		  0x08 (PIN_INPUT_PULLUP | MUX_MODE1) /* gpmc_ad2.mmc1_dat2 */
 		  0x0c (PIN_INPUT_PULLUP | MUX_MODE1) /* gpmc_ad3.mmc1_dat3 */
+		  0x30 (PIN_INPUT_PULLUP | MUX_MODE2)	/* gpmc_ad12.mmc1_dat4 */
+		  0x34 (PIN_INPUT_PULLUP | MUX_MODE2)	/* gpmc_ad13.mmc1_dat5 */
+		  0x38 (PIN_INPUT_PULLUP | MUX_MODE2)	/* gpmc_ad14.mmc1_dat6 */
+		  0x3C (PIN_INPUT_PULLUP | MUX_MODE2)	/* gpmc_ad15.mmc1_dat7 */
 		  >;
 		};
 
@@ -283,10 +287,10 @@
 				0x24 0x01	/* gpmc_ad9.lcd_data17, OUTPUT | MODE1 */
 				0x28 0x01	/* gpmc_ad10.lcd_data18, OUTPUT | MODE1 */
 				0x2c 0x01	/* gpmc_ad11.lcd_data19, OUTPUT | MODE1 */
-				0x30 0x01	/* gpmc_ad12.lcd_data20, OUTPUT | MODE1 */
-				0x34 0x01	/* gpmc_ad13.lcd_data21, OUTPUT | MODE1 */
-				0x38 0x01	/* gpmc_ad14.lcd_data22, OUTPUT | MODE1 */
-				0x3c 0x01	/* gpmc_ad15.lcd_data23, OUTPUT | MODE1 */
+				/*Removed to enable 8-bit MMC 0x30 0x01	/* gpmc_ad12.lcd_data20, OUTPUT | MODE1 */
+				/*Removed to enable 8-bit MMC 0x34 0x01	/* gpmc_ad13.lcd_data21, OUTPUT | MODE1 */
+				/*Removed to enable 8-bit MMC 0x38 0x01	/* gpmc_ad14.lcd_data22, OUTPUT | MODE1 */
+				/*Removed to enable 8-bit MMC 0x3c 0x01	/* gpmc_ad15.lcd_data23, OUTPUT | MODE1 */
 				0xa0 0x00	/* lcd_data0.lcd_data0, OUTPUT | MODE0 */
 				0xa4 0x00	/* lcd_data1.lcd_data1, OUTPUT | MODE0 */
 				0xa8 0x00	/* lcd_data2.lcd_data2, OUTPUT | MODE0 */
@@ -316,10 +320,10 @@
 				0x24 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad9.lcd_data17 */
 				0x28 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad10.lcd_data18 */
 				0x2c (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad11.lcd_data19 */
-				0x30 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad12.lcd_data20 */
-				0x34 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad13.lcd_data21 */
-				0x38 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad14.lcd_data22 */
-				0x3c (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad15.lcd_data23 */
+				/*Removed to enable 8-bit MMC 0x30 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad12.lcd_data20 */
+				/*Removed to enable 8-bit MMC 0x34 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad13.lcd_data21 */
+				/*Removed to enable 8-bit MMC 0x38 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad14.lcd_data22 */
+				/*Removed to enable 8-bit MMC 0x3c (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad15.lcd_data23 */
 				0xa0 (PULL_DISABLE | MUX_MODE7)		/* lcd_data0.lcd_data0 */
 				0xa4 (PULL_DISABLE | MUX_MODE7)		/* lcd_data1.lcd_data1 */
 				0xa8 (PULL_DISABLE | MUX_MODE7)		/* lcd_data2.lcd_data2 */
@@ -705,6 +709,7 @@
 	rmii-clock-ext;
 };
 
+/*
 &tscadc {
 	status = "okay";
 	tsc {
@@ -715,6 +720,7 @@
 		ti,charge-delay = <0x10000>;
 	};
 };
+*/
 
 &mmc1 {
 	status = "okay";
@@ -729,7 +735,7 @@
   vmmc-supply = <&vmmc_reg>;
   pinctrl-names = "default";
   pinctrl-0 = <&emmc_pins>;
-  bus-width = <4>;
+  bus-width = <8>;
   ti,non-removable;
   status = "okay";
 };
