@@ -384,26 +384,8 @@
 				0x02 0x2d 0x25 0x2b /* Set VDD2 to 1.1V */
 			>;
 
-			seeprom0:seeprom0@54 {
-				compatible = "atmel,24c02";
-				reg = <0x54>;
-			};
-
-			seeprom1:seeprom1@50 {
-				compatible = "atmel,24c02";
-				reg = <0x50>;
-			};
-			
-			m41t83:m41t83@68 {
-				compatible = "stm,m41t83";
-				reg = <0x68>;
-			};
-
-			tps: tps@2d {
-				reg = <0x2d>;
-			};
-			
 			pca9555: pca9555@20 {
+				/* I/O expander uSom */
 				compatible = "nxp,pca9555";
 				interrupt-parent = <&gpio3>;
 				interrupts = <20 0x8>;
@@ -413,6 +395,44 @@
 				#interrupt-cells = <2>;
 				reg = <0x20>;
 			};
+
+			//pca9536: gpio@41 {
+			//	/* I/O expander CS uSom */
+			//	compatible = "ti,pca9536";
+			//	reg = <0x41>;
+			//	gpio-controller;
+			//	#gpio-cells = <3>;
+			//};
+
+			tps: tps@2d {
+				/* Chip alimentazioni uSom */
+				reg = <0x2d>;
+			};
+
+			seeprom1:seeprom1@50 {
+				/* seeprom1 uSom */
+				compatible = "atmel,24c02";
+				reg = <0x50>;
+			};
+
+			m41t83:m41t83@68 {
+				/* RTC uSom */
+				compatible = "stm,m41t83";
+				reg = <0x68>;
+			};
+			
+			temp0:temp0@40 {
+				/* temp0/Humidity Carrier */
+				compatible = "htu21";
+				reg = <0x40>;
+			};
+
+			seeprom0:seeprom0@54 {
+				/* seeprom0 Carrier */
+				compatible = "atmel,24c02";
+				reg = <0x54>;
+			};
+
 
 		};
 
