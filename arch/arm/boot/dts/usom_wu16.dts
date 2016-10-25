@@ -421,7 +421,7 @@
 				reg = <0x68>;
 			};
 			
-			temp0:temp0@40 {
+			htu21:htu21@40 {
 				/* temp0/Humidity Carrier */
 				compatible = "htu21";
 				reg = <0x40>;
@@ -433,7 +433,20 @@
 				reg = <0x54>;
 			};
 
+			lps331ap@5c {
+				/* pressure sensor Carrier */
+				compatible = "lps331ap";
+				reg = <0x5c>;
+				interrupt-parent = <&irq_map>;
+				interrupts = <0>;
 
+				irq_map: irq-map {
+					#interrupt-cells = <1>;
+					#address-cells = <0>;
+					#size-cells = <0>;
+					interrupt-map = <0 &pca9555 4 0>;
+				};
+			};
 		};
 
 		spi0: spi@48030000 {
