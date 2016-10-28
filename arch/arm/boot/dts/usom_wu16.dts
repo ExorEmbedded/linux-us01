@@ -188,8 +188,6 @@
 		  0x054 (MUX_MODE7)
 		  0x050 (MUX_MODE7)
 		  0x040 (MUX_MODE7)
-
-		  
 		  >;
 		};
 		
@@ -251,6 +249,13 @@
 		  		0x7c 0x07	/* gpmc_csn0: EN_VDD / gpio1_29 OUTPUT | MODE7 */
 		  		0x88 0x07	/* gpmc_csn3: EN_BL / gpio2_0 OUTPUT | MODE7 */
 		  	>;
+		};
+
+		irqgpio_pins_default: irqgpio_pins_default {
+			pinctrl-single,pins = <
+				0x1a4 ( PIN_INPUT | MUX_MODE7 ) /* (C13) mcasp0_fsr.gpio3[19] */
+				0x1a8 ( PIN_INPUT | MUX_MODE7 ) /* (D13) mcasp0_axr1.gpio3[20] */
+			>;
 		};
 
 		phyuart_ctrl_pins: pinmux_phyuart_ctrl_pins {
@@ -383,7 +388,7 @@
 			wake-sequence = /bits/ 8 <
 				0x02 0x2d 0x25 0x2b /* Set VDD2 to 1.1V */
 			>;
-
+/* USOM I2C DEVICES */
 			pca9555: pca9555@20 {
 				/* I/O expander uSom */
 				compatible = "nxp,pca9555";
@@ -420,6 +425,21 @@
 				compatible = "stm,m41t83";
 				reg = <0x68>;
 			};
+/* CARRIER I2C DEVICES */
+			lis331dlh@18 {
+				/* pressure sensor Carrier */
+				compatible = "lis331dlh";
+				reg = <0x18>;
+				interrupt-parent = <&irq_map_lis>;
+				interrupts = <0>;
+
+				irq_map_lis: irq-map {
+					#interrupt-cells = <1>;
+					#address-cells = <0>;
+					#size-cells = <0>;
+					interrupt-map = <0 &gpio3 19 0>;
+				};
+			};
 			
 			htu21:htu21@40 {
 				/* temp0/Humidity Carrier */
@@ -437,16 +457,17 @@
 				/* pressure sensor Carrier */
 				compatible = "lps331ap";
 				reg = <0x5c>;
-				interrupt-parent = <&irq_map>;
+				interrupt-parent = <&irq_map_lps>;
 				interrupts = <0>;
 
-				irq_map: irq-map {
+				irq_map_lps: irq-map {
 					#interrupt-cells = <1>;
 					#address-cells = <0>;
 					#size-cells = <0>;
 					interrupt-map = <0 &pca9555 4 0>;
 				};
 			};
+/* END I2C DEVICES */
 		};
 
 		spi0: spi@48030000 {
