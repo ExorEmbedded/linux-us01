@@ -54,6 +54,9 @@ struct plxx_data
   u32                      installed;               // Indicates if the plugin is physically installed
   u8                       eeprom[FULLEEPROMSIZE];  // Image of the I2C SEEPROM contents of the plugin
   bool                     f_updated;               // Flag indicating if datas for the current plugin were still taken
+  u32                      sel_cs_sp1_gpio;
+  u32                      sel_cs_sp2_gpio;
+  u32                      sel_ser_can_gpio;
 };
 
 static int UpdatePluginData(struct plxx_data *data);
@@ -164,20 +167,119 @@ static int plxx_parse_dt(struct device *dev, struct plxx_data *data)
   }
   else
     return -EPROBE_DEFER;
-  
+
+/*
+  This part is now performed by plxx_parse_dt_cs_line function.
   //Configure the internal US01 I2C expander (U16, PCA9536) for ttyO1 multiplexing
   tmp=0x0b;
-  data->ioexp_macc->write(data->ioexp_macc, &tmp, 3, sizeof(u8));
+  data->ioexp_macc->write(data->ioexp_macc, &tmp, 3, sizeof(u8));  -> 0x0b on reg 0x03 --> only port 3 output (sel ser can)
   msleep(1);
   tmp = 0x00;
-  data->ioexp_macc->write(data->ioexp_macc, &tmp, 1, sizeof(u8));
-  
+  data->ioexp_macc->write(data->ioexp_macc, &tmp, 1, sizeof(u8));  -> 0x00 on reg 0x01 --> selected serial3 function
+*/
+  return 0;
+}
+
+static int plxx_parse_dt_cs_line(struct device *dev, struct plxx_data *data)
+{
+  struct device_node* node = dev->of_node;
+  int	ret;
+  enum of_gpio_flags flags;
+
+  /*
+   * Get the sel_cs_sp1_gpio
+   */
+  data->sel_cs_sp1_gpio = of_get_named_gpio_flags(node, "sel-cs-sp1-gpio", 0,  &flags);
+  if (data->sel_cs_sp1_gpio == -EPROBE_DEFER)
+    return -EPROBE_DEFER;
+
+  if (gpio_is_valid(data->sel_cs_sp1_gpio))
+  {
+    ret = gpio_request_one(data->sel_cs_sp1_gpio, flags, "test");
+    if (ret < 0)
+      dev_err( dev, "failed to request GPIO %d: %d\n", data->sel_cs_sp1_gpio, ret);
+
+    dev_info( dev, "request GPIO (sel_cs_sp1_gpio) = %d \n", data->sel_cs_sp1_gpio );
+    // se gpio valido, cerco variabile
+    //bool enable-spi1-cs0 	--> gpio a zero
+    //bool enable-spi1-CSFR	--> gpio a uno
+    if (of_property_read_bool(node, "enable-spi1-cs0"))
+      gpio_set_value_cansleep(data->sel_cs_sp1_gpio, 0);
+    else if (of_property_read_bool(node, "enable-spi1-csfr"))
+      gpio_set_value_cansleep(data->sel_cs_sp1_gpio, 1);
+    else
+    {
+      dev_err( dev, "Failed to assign default SP1-CS mode %d  \n", data->sel_cs_sp1_gpio );
+      gpio_free(data->sel_cs_sp1_gpio);
+    }
+  }
+
+  /*
+   * Get the sel_cs_sp2_gpio
+   */
+  data->sel_cs_sp2_gpio = of_get_named_gpio_flags(node, "sel-cs-sp2-gpio", 0,  &flags);
+  if (data->sel_cs_sp2_gpio == -EPROBE_DEFER)
+    return -EPROBE_DEFER;
+
+  if (gpio_is_valid(data->sel_cs_sp2_gpio))
+  {
+    ret = gpio_request_one(data->sel_cs_sp2_gpio, flags, "test");
+    if (ret < 0)
+      dev_err( dev, "failed to request GPIO %d: %d\n", data->sel_cs_sp2_gpio, ret);
+
+    dev_info( dev, "request GPIO (sel_cs_sp2_gpio) = %d \n", data->sel_cs_sp2_gpio );
+    // se gpio valido, cerco variabile
+    //bool enable-spi2-cs0 --> gpio a zero
+    //bool enable-spi2-cs1 --> gpio a uno
+    if (of_property_read_bool(node, "enable-spi2-cs0"))
+      gpio_set_value_cansleep(data->sel_cs_sp2_gpio, 0);
+    else if (of_property_read_bool(node, "enable-spi2-cs1"))
+      gpio_set_value_cansleep(data->sel_cs_sp2_gpio, 1);
+    else
+    {
+      dev_err( dev, "Failed to assign default SP2-CS mode %d  \n", data->sel_cs_sp2_gpio );
+      gpio_free(data->sel_cs_sp2_gpio);
+    }
+  }
+
+  /*
+   * Get the sel_ser_can_gpio
+   */
+  data->sel_ser_can_gpio = of_get_named_gpio_flags(node, "sel-ser3-can-gpio", 0,  &flags);
+  if (data->sel_ser_can_gpio == -EPROBE_DEFER)
+    return -EPROBE_DEFER;
+
+  if (gpio_is_valid(data->sel_ser_can_gpio))
+  {
+    ret = gpio_request_one(data->sel_ser_can_gpio, flags, "test");
+    if (ret < 0)
+      dev_err( dev, "failed to request GPIO %d: %d\n", data->sel_ser_can_gpio, ret);
+
+    dev_info( dev, "request GPIO (sel_ser_can_gpio) = %d \n", data->sel_ser_can_gpio );
+    // se gpio valido, cerco variabile
+    //bool enable-serial3 --> gpio a zero
+    //bool enable-can     --> gpio a uno
+    if (of_property_read_bool(node, "enable-serial3"))
+      gpio_set_value_cansleep(data->sel_ser_can_gpio, 0);
+    else if (of_property_read_bool(node, "enable-can"))
+      gpio_set_value_cansleep(data->sel_ser_can_gpio, 1);
+    else
+    {
+      dev_err( dev, "Failed to assign default SEL serial3/can mode %d  \n", data->sel_ser_can_gpio );
+      gpio_free(data->sel_ser_can_gpio);
+    }
+  }
+
   return 0;
 }
 #else
-static int hrs_parse_dt(struct device *dev, struct hrs_data *data)
+static int plxx_parse_dt(struct device *dev, struct hrs_data *data)
 {
   return -ENODEV;
+}
+static int plxx_parse_dt_cs_line(struct device *dev, struct hrs_data *data)
+{
+	return -ENODEV;
 }
 #endif
 
@@ -475,6 +577,13 @@ static int plxx_probe(struct platform_device *pdev)
   }
   memset(data, 0, sizeof(struct plxx_data));
   dev_set_drvdata(&pdev->dev, data);
+
+  res = plxx_parse_dt_cs_line(&pdev->dev, data);
+  if (res)
+  {
+    dev_err(&pdev->dev, "Could not find valid DT data.\n");
+    goto plxx_error1;
+  }
 
   res = plxx_parse_dt(&pdev->dev, data);
   if (res) 

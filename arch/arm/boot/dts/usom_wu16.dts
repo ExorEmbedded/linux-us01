@@ -401,13 +401,13 @@
 				reg = <0x20>;
 			};
 
-			//pca9536: gpio@41 {
-			//	/* I/O expander CS uSom */
-			//	compatible = "ti,pca9536";
-			//	reg = <0x41>;
-			//	gpio-controller;
-			//	#gpio-cells = <3>;
-			//};
+			pca9536: gpio@41 {
+				/* I/O expander SPIChipSelect / CanSelect uSom */
+				compatible = "ti,pca9536";
+				reg = <0x41>;
+				gpio-controller;
+				#gpio-cells = <2>;
+			};
 
 			tps: tps@2d {
 				/* Chip alimentazioni uSom */
@@ -602,6 +602,20 @@
 	  eeprom = <&seeprom0>;
 	  backlight = <&pwm_bl00>;
 	  rtcnvram = <&m41t83>;
+	};
+
+	csman0: csman0 {
+		compatible = "exor,plxx_manager";
+		sel-cs-sp1-gpio = <&pca9536 0 0>;
+		enable-spi1-cs0;
+		//enable-spi1-csfr
+		sel-cs-sp2-gpio = <&pca9536 1 0>;
+		//enable-spi2-cs0;
+		//enable-spi2-cs1;
+		sel-ser3-can-gpio = <&pca9536 2 0>;
+		//enable-serial3;
+		enable-can;
+		status = "okay";
 	};
 	
 	beeper {
