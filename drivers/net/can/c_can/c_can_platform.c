@@ -35,6 +35,9 @@
 
 #include <linux/can/dev.h>
 
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+
 #include "c_can.h"
 
 #define CAN_RAMINIT_START_MASK(i)	(1 << (i))
@@ -105,6 +108,8 @@ static const struct of_device_id c_can_of_table[] = {
 };
 MODULE_DEVICE_TABLE(of, c_can_of_table);
 
+
+  u32 stb_gpio;
 static int c_can_plat_probe(struct platform_device *pdev)
 {
 	int ret;
@@ -117,6 +122,8 @@ static int c_can_plat_probe(struct platform_device *pdev)
 	int irq;
 	struct clk *clk;
 
+	enum of_gpio_flags flags;
+
 	if (pdev->dev.of_node) {
 		match = of_match_device(c_can_of_table, &pdev->dev);
 		if (!match) {
@@ -125,6 +132,26 @@ static int c_can_plat_probe(struct platform_device *pdev)
 			goto exit;
 		}
 		id = match->data;
+
+/*****************************************************/
+    /*
+     * Stand-By gpio
+     */
+    stb_gpio = of_get_named_gpio_flags(pdev->dev.of_node, "stb-gpio", 0,  &flags);
+    if (stb_gpio == -EPROBE_DEFER)
+      return -EPROBE_DEFER;
+
+    dev_info( &pdev->dev, "request GPIO (stb_gpio) = %d \n", stb_gpio );
+    if (gpio_is_valid( stb_gpio ))
+    {
+      ret = gpio_request_one( stb_gpio, flags, "stbgpio");
+      if (ret < 0)
+        dev_err( &pdev->dev, "failed to request GPIO %d: %d\n", stb_gpio, ret);
+      
+      gpio_set_value_cansleep(stb_gpio, 1);
+    }
+/*****************************************************/
+
 	} else {
 		id = platform_get_device_id(pdev);
 	}
@@ -245,6 +272,10 @@ static int c_can_plat_remove(struct platform_device *pdev)
 	struct net_device *dev = platform_get_drvdata(pdev);
 	struct c_can_priv *priv = netdev_priv(dev);
 	struct resource *mem;
+
+
+	if (gpio_is_valid(stb_gpio))
+		gpio_free(stb_gpio);
 
 	unregister_c_can_dev(dev);
 

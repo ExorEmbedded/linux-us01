@@ -272,6 +272,20 @@
 		  >;
 		};
 
+		dcan0_pins_default: dcan0_pins_default {
+			pinctrl-single,pins = <
+				0x17c ( PIN_INPUT | MUX_MODE2 ) /* (D17) uart1_rtsn.dcan0_rx */
+				0x178 ( PIN_OUTPUT | MUX_MODE2 ) /* (D18) uart1_ctsn.dcan0_tx */
+			>;
+		};
+
+		dcan1_pins_default: dcan1_pins_default {
+			pinctrl-single,pins = <
+				0x184 ( PIN_INPUT | MUX_MODE2 ) /* (D15) uart1_txd.dcan1_rx */
+				0x180 ( PIN_OUTPUT | MUX_MODE2 ) /* (D16) uart1_rxd.dcan1_tx */
+			>;
+		};
+
 		user_leds_default: user_leds_default {
 			pinctrl-single,pins = <
 				0x94 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)	/* gpio2_5 */
@@ -473,17 +487,29 @@
 		spi0: spi@48030000 {
 			pinctrl-names = "default";
 			pinctrl-0 = <&spi0_pins>;
-
 			status = "okay";
-			
-			fram: at25@3 {
-			  compatible = "atmel,at25", "st,m95256";
-			  reg = <0>;
-			  spi-max-frequency = <20000000>;
-			  pagesize = <64>;
-			  size = <65536>;
-			  address-width = <16>;
+
+/* USOM SPI DEVICES */		
+//			fram: at25@3 {
+//				/* FRAM uSom */
+//			  compatible = "atmel,at25", "st,m95256";
+//			  reg = <0>;
+//			  spi-max-frequency = <20000000>;
+//			  pagesize = <64>;
+//			  size = <65536>;
+//			  address-width = <16>;
+//			};
+
+/* CARRIER SPI DEVICES */
+			spidev0: spi0@0 {
+				/* TJA1145 /dev/spidev1.0 */
+        compatible = "spidev";
+        reg = <0>;
+        //spi-cpha;
+        spi-cpol;
+        spi-max-frequency = <500000>;
 			};
+
 		};
 		
 		usb: usb@47400000 {
@@ -798,4 +824,17 @@
 &edma {
 	ti,edma-xbar-event-map = <1 12
 				  2 13>;
+};
+
+&dcan0 {
+  pinctrl-names = "default";
+  pinctrl-0 = <&dcan0_pins_default>;
+  status = "okay";
+};
+
+&dcan1 {
+  pinctrl-names = "default";
+  pinctrl-0 = <&dcan1_pins_default>;
+	stb-gpio = <&pca9555 6 0>;
+  status = "okay";
 };
