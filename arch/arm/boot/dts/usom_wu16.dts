@@ -93,7 +93,7 @@
 
 	am33xx_pinmux: pinmux@44e10800 {
 		pinctrl-names = "default";
-		pinctrl-0 = <&clkout2_pin &lcd_pins_enable &phyuart_ctrl_pins &buzzer_pins_enable &digitalout_pins_default>;
+		pinctrl-0 = <&clkout2_pin &lcd_pins_enable &phyuart_ctrl_pins &buzzer_pins_enable &digitalout_pins_default &digitalin_pins_default>;
 
 		i2c0_pins: pinmux_i2c0_pins {
 			pinctrl-single,pins = <
@@ -236,6 +236,15 @@
 				0x13c ( PIN_OUTPUT | MUX_MODE7 ) /* (L15) gmii1_rxd1.gpio2[20]   OUT3  */
 				0x140 ( PIN_OUTPUT | MUX_MODE7 ) /* (M16) gmii1_rxd0.gpio2[21]   OUT4  */
 				0x190 ( PIN_OUTPUT | MUX_MODE7 ) /* (A13) mcasp0_aclkx.gpio3[14] EN12  */
+			>;
+		};
+
+		digitalin_pins_default: digitalin_pins_default {
+			pinctrl-single,pins = <
+				0x194 ( PIN_INPUT | MUX_MODE7 ) /* (B13) mcasp0_fsx.gpio3[15] */
+				0x198 ( PIN_INPUT | MUX_MODE7 ) /* (D12) mcasp0_axr0.gpio3[16] */
+				0x19c ( PIN_INPUT | MUX_MODE7 ) /* (C12) mcasp0_ahclkr.gpio3[17] */
+				0x1ac ( PIN_INPUT | MUX_MODE7 ) /* (A14) mcasp0_ahclkx.gpio3[21] */
 			>;
 		};
 
@@ -618,7 +627,7 @@
 		//enable-spi1-csfr
 		sel-cs-sp2-gpio = <&pca9536 1 0>;
 		//enable-spi2-cs0;
-		//enable-spi2-cs1;
+		enable-spi2-cs1;
 		sel-ser3-can-gpio = <&pca9536 2 0>;
 		enable-serial3;
 		//enable-can;
