@@ -169,6 +169,7 @@ struct uart_omap_port {
 	int			rts_gpio;
 	int 			mode_gpio;    /* If a valid gpio is mapped here, it means we have a programmable RS485/RS232 phy */
 	int                     rxen_gpio;    /* If a valid gpio is mapped here, we will use it for disabling the RX echo while in RS485 mode */
+	int 			mode_two_lines_only;
 
 	struct pm_qos_request	pm_qos_request;
 	u32			latency;
@@ -428,17 +429,23 @@ static void serial_omap_start_tx(struct uart_port *port)
 	}
 	else
 	{
-	  /*
-	  * If we are in RS232 mode and we have a programmable phy, enable the TX if not yet done.
-	  */
-	  if (gpio_is_valid(up->mode_gpio)) 
-	    if (gpio_is_valid(up->rts_gpio))
+	    /*
+	     * If we are in RS232 mode and we have a programmable phy, enable the TX if not yet done.
+	     */
+	    if (gpio_is_valid(up->mode_gpio))
 	    {
-	      res = (up->rs485.flags & SER_RS485_RTS_ON_SEND) ? 1 : 0;
-	      if (gpio_get_value(up->rts_gpio) != res)
-	      {
-		gpio_set_value(up->rts_gpio, res);
-	      }
+		if (gpio_is_valid(up->rts_gpio))
+		{
+		    if(up->mode_two_lines_only)
+			res = 0;
+		    else
+			res = (up->rs485.flags & SER_RS485_RTS_ON_SEND) ? 1 : 0;
+
+		    if (gpio_get_value(up->rts_gpio) != res)
+		    {
+			gpio_set_value(up->rts_gpio, res);
+		    }
+		}
 	    }
 	}
 
@@ -1692,6 +1699,11 @@ static int serial_omap_probe_rs485(struct uart_omap_port *up,
 		if (gpio_is_valid(up->mode_gpio)) 
 		  gpio_set_value(up->mode_gpio, 1);
 	}
+
+	if (of_property_read_bool(np, "mode-two-lines-only"))
+		up->mode_two_lines_only = 1;
+	else
+		up->mode_two_lines_only = 0;
 
 	return 0;
 }

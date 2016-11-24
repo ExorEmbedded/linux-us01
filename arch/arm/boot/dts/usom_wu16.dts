@@ -366,7 +366,7 @@
 			mode-gpio = <&gpio1 7 0>;
 			rxen-gpio = <&gpio1 5 0>;
 			rs485-rts-active-high;
-
+			mode-two-lines-only;
 			status = "okay";
 		};
 
