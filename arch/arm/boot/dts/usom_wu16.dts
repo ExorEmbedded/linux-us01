@@ -629,8 +629,8 @@
 		//enable-spi2-cs0;
 		enable-spi2-cs1;
 		sel-ser3-can-gpio = <&pca9536 2 0>;
-		enable-serial3;
-		//enable-can;
+		//enable-serial3;
+		enable-can;
 		status = "okay";
 	};
 	
