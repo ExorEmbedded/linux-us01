@@ -1328,8 +1328,10 @@ err_cleanup:
 
 static int cpsw_ndo_stop(struct net_device *ndev)
 {
+	bool reenable_intr = true;
 	struct cpsw_priv *priv = netdev_priv(ndev);
 
+	cpsw_intr_disable(priv);
 	cpsw_info(priv, ifdown, "shutting down cpsw device\n");
 	netif_stop_queue(priv->ndev);
 	napi_disable(&priv->napi);
@@ -1342,11 +1344,16 @@ static int cpsw_ndo_stop(struct net_device *ndev)
 		cpdma_ctlr_int_ctrl(priv->dma, false);
 		cpdma_ctlr_stop(priv->dma);
 		cpsw_ale_stop(priv->ale);
+		reenable_intr = false;
 	}
 	for_each_slave(priv, cpsw_slave_stop, priv);
 	pm_runtime_put_sync(&priv->pdev->dev);
 	if (priv->data.dual_emac)
 		priv->slaves[priv->emac_port].open_stat = false;
+
+	if (reenable_intr)
+		cpsw_intr_enable(priv);
+	
 	return 0;
 }
 
