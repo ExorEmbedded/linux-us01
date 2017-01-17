@@ -27,6 +27,8 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/sort.h>
+#include <linux/hrtimer.h>
+#include <linux/ktime.h>
 
 #include <linux/mfd/ti_am335x_tscadc.h>
 
@@ -306,6 +308,32 @@ static void titsc_read_coordinates(struct titsc *ts_dev,
 	*x = xsum;
 }
 
+#define MS_TO_NS(x)	(x * 1E6L)
+
+struct ts_timer_data
+{
+    ktime_t         period_down;
+    ktime_t         period_up;
+    struct hrtimer  timer;
+    struct titsc *timer_ts_dev;
+};
+
+static struct ts_timer_data *tmr;
+
+enum hrtimer_restart ts_tmr_callback( struct hrtimer *tmr )
+{
+    struct ts_timer_data  *ts_tmr_dat = container_of(tmr, struct ts_timer_data, timer);
+    struct titsc          *ts_dev = ts_tmr_dat->timer_ts_dev;
+    struct input_dev      *input_dev  = ts_dev->input;
+
+    ts_dev->pen_down = false;
+    input_report_key(input_dev, BTN_TOUCH, 0);
+    input_report_abs(input_dev, ABS_PRESSURE, 0);
+    input_sync(input_dev);
+
+    return HRTIMER_NORESTART;
+}
+
 static irqreturn_t titsc_irq(int irq, void *dev)
 {
 	struct titsc *ts_dev = dev;
@@ -315,23 +343,35 @@ static irqreturn_t titsc_irq(int irq, void *dev)
 	unsigned int z1, z2, z, tmp;
 	unsigned int max_rt;
 
+	//Timer restart, workaround ticket 11656
+	if(  hrtimer_active(&tmr->timer) )
+	    hrtimer_forward_now(&tmr->timer, tmr->period_down );
+
 	status = titsc_readl(ts_dev, REG_RAWIRQSTATUS);
 	if (status & IRQENB_HW_PEN) {
 		ts_dev->pen_down = true;
 		titsc_writel(ts_dev, REG_IRQWAKEUP, 0x00);
 		titsc_writel(ts_dev, REG_IRQCLR, IRQENB_HW_PEN);
 		irqclr |= IRQENB_HW_PEN;
+		//Start del timer a 250 ms;
+		hrtimer_start(&tmr->timer, tmr->period_down, HRTIMER_MODE_REL);
 	}
 
 	if (status & IRQENB_PENUP) {
 		fsm = titsc_readl(ts_dev, REG_ADCFSM);
 		if (fsm == ADCFSM_STEPID) {
-			ts_dev->pen_down = false;
-			input_report_key(input_dev, BTN_TOUCH, 0);
-			input_report_abs(input_dev, ABS_PRESSURE, 0);
-			input_sync(input_dev);
+			//ts_dev->pen_down = false;
+			//input_report_key(input_dev, BTN_TOUCH, 0);
+			//input_report_abs(input_dev, ABS_PRESSURE, 0);
+			//input_sync(input_dev);
+
+			//Stop timer, workaround ticket 11656  --> Barbatrucco, non esiste un vero e proprio stop;
+			hrtimer_start(&tmr->timer, tmr->period_up, HRTIMER_MODE_REL);
+
 		} else {
 			ts_dev->pen_down = true;
+			//Start timer 250 ms, workaround ticket 11656;
+			hrtimer_start(&tmr->timer, tmr->period_down, HRTIMER_MODE_REL);
 		}
 		irqclr |= IRQENB_PENUP;
 	}
@@ -517,6 +557,15 @@ static int titsc_probe(struct platform_device *pdev)
 		goto err_free_irq;
 
 	platform_set_drvdata(pdev, ts_dev);
+
+	//Init timer, workaround ticket 11656
+	tmr = kmalloc(sizeof(struct ts_timer_data), GFP_KERNEL);
+	hrtimer_init(&tmr->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	tmr->period_up = ktime_set(0, MS_TO_NS(10L));
+	tmr->period_down = ktime_set(0,  MS_TO_NS(250L));
+	tmr->timer_ts_dev = ts_dev;
+	tmr->timer.function = ts_tmr_callback;
+
 	return 0;
 
 err_free_irq:
@@ -542,6 +591,10 @@ static int titsc_remove(struct platform_device *pdev)
 	input_unregister_device(ts_dev->input);
 
 	kfree(ts_dev);
+
+	hrtimer_cancel(&tmr->timer);
+	kfree(tmr);
+
 	return 0;
 }
 
