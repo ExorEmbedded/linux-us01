@@ -37,6 +37,10 @@
 
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
+#if defined(CONFIG_CAN_TJA1145) || defined(CONFIG_CAN_TJA1145_MODULE)
+#include <linux/spi/spi.h>
+#include <linux/spi/tja1145.h>
+#endif
 
 #include "c_can.h"
 
@@ -108,8 +112,6 @@ static const struct of_device_id c_can_of_table[] = {
 };
 MODULE_DEVICE_TABLE(of, c_can_of_table);
 
-
-  u32 stb_gpio;
 static int c_can_plat_probe(struct platform_device *pdev)
 {
 	int ret;
@@ -123,6 +125,11 @@ static int c_can_plat_probe(struct platform_device *pdev)
 	struct clk *clk;
 
 	enum of_gpio_flags flags;
+#if defined(CONFIG_CAN_TJA1145) || defined(CONFIG_CAN_TJA1145_MODULE)
+	u32  transceiver_handle = 0;
+	struct device_node* transceiver_node;
+	u8 tja_reg_val = NORMAL_MODE;
+#endif
 
 	if (pdev->dev.of_node) {
 		match = of_match_device(c_can_of_table, &pdev->dev);
@@ -132,25 +139,6 @@ static int c_can_plat_probe(struct platform_device *pdev)
 			goto exit;
 		}
 		id = match->data;
-
-/*****************************************************/
-    /*
-     * Stand-By gpio
-     */
-    stb_gpio = of_get_named_gpio_flags(pdev->dev.of_node, "stb-gpio", 0,  &flags);
-    if (stb_gpio == -EPROBE_DEFER)
-      return -EPROBE_DEFER;
-
-    dev_info( &pdev->dev, "request GPIO (stb_gpio) = %d \n", stb_gpio );
-    if (gpio_is_valid( stb_gpio ))
-    {
-      ret = gpio_request_one( stb_gpio, flags, "stbgpio");
-      if (ret < 0)
-        dev_err( &pdev->dev, "failed to request GPIO %d: %d\n", stb_gpio, ret);
-      
-      gpio_set_value_cansleep(stb_gpio, 1);
-    }
-/*****************************************************/
 
 	} else {
 		id = platform_get_device_id(pdev);
@@ -249,6 +237,68 @@ static int c_can_plat_probe(struct platform_device *pdev)
 		goto exit_free_device;
 	}
 
+	/*
+	 * Stand-By gpio
+	 */
+	priv->stb_gpio = of_get_named_gpio_flags(pdev->dev.of_node, "stb-gpio", 0,  &flags);
+	if (priv->stb_gpio == -EPROBE_DEFER)
+	    return -EPROBE_DEFER;
+
+	if( (priv->stb_gpio >= 0) &&
+	    (gpio_is_valid(priv->stb_gpio))
+	  )
+	{
+	    dev_info( &pdev->dev, "request GPIO (stb_gpio) = %d \n", priv->stb_gpio );
+	    ret = gpio_request_one( priv->stb_gpio, flags, "stbgpio");
+	    if (ret < 0) {
+			dev_err( &pdev->dev, "failed to request GPIO %d: %d\n", priv->stb_gpio, ret);
+			return -ENODEV;
+	    }
+	    gpio_set_value_cansleep(priv->stb_gpio, 1);
+	}
+
+#if defined(CONFIG_CAN_TJA1145) || defined(CONFIG_CAN_TJA1145_MODULE)
+    /*
+     * TJA1145 transceiver
+     */
+    ret = of_property_read_u32(pdev->dev.of_node, "transceiver", &transceiver_handle);
+    if (ret != 0)
+    {
+        dev_info(&pdev->dev, "No managed transceiver found\n");
+    }
+    else
+    {
+        dev_info(&pdev->dev, "Managed transceiver found\n");
+        transceiver_node = of_find_node_by_phandle(transceiver_handle);
+        if (transceiver_node == NULL)
+        {
+            dev_err(&pdev->dev, "Failed to find transceiver node\n");
+            return -ENODEV;
+        }
+
+        priv->transceiver_client = of_find_spi_device_by_node(transceiver_node);
+        if (priv->transceiver_client == NULL)
+        {
+            dev_err(&pdev->dev, "Failed to find spi client\n");
+            of_node_put(transceiver_node);
+            return -EPROBE_DEFER;
+        }
+        /* release ref to the node and inc reference to the SPI client used */
+        of_node_put(transceiver_node);
+        transceiver_node = NULL;
+
+        /* And now get the I2C SEEPROM memory accessor */
+        priv->transceiver_macc = spi_tja1145_get_memory_accessor(priv->transceiver_client);
+        if (IS_ERR_OR_NULL(priv->transceiver_macc))
+        {
+            dev_err(&pdev->dev, "Failed to get memory accessor\n");
+            return -ENODEV;
+        }
+        tja1145_driver_version();
+		 priv->transceiver_macc->write(priv->transceiver_macc, (u8*)&tja_reg_val, REG_MODE_CONTROL, sizeof(u8));
+    }
+#endif
+
 	dev_info(&pdev->dev, "%s device registered (regs=%p, irq=%d)\n",
 		 KBUILD_MODNAME, priv->base, dev->irq);
 	return 0;
@@ -273,9 +323,18 @@ static int c_can_plat_remove(struct platform_device *pdev)
 	struct c_can_priv *priv = netdev_priv(dev);
 	struct resource *mem;
 
+#if defined(CONFIG_CAN_TJA1145) || defined(CONFIG_CAN_TJA1145_MODULE)
+	u8 tja_reg_val = SLEEP_MODE;
+	struct memory_accessor* macc = priv->transceiver_macc;
+	if(macc)
+		macc->write(macc, (u8*)&tja_reg_val, REG_MODE_CONTROL, sizeof(u8));
+#endif
 
-	if (gpio_is_valid(stb_gpio))
-		gpio_free(stb_gpio);
+	if( (priv->stb_gpio >= 0) && (gpio_is_valid(priv->stb_gpio)) )
+	{
+	    gpio_set_value_cansleep(priv->stb_gpio, 0);
+	    gpio_free(priv->stb_gpio);
+	}
 
 	unregister_c_can_dev(dev);
 

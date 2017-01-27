@@ -172,6 +172,11 @@ struct c_can_priv {
 	u32 __iomem *raminit_ctrlreg;
 	unsigned int instance;
 	void (*raminit) (const struct c_can_priv *priv, bool enable);
+	u32 stb_gpio;
+#if defined(CONFIG_CAN_TJA1145) || defined(CONFIG_CAN_TJA1145_MODULE)
+	struct spi_device* transceiver_client;
+	struct memory_accessor*  transceiver_macc;
+#endif
 };
 
 struct net_device *alloc_c_can_dev(void);
