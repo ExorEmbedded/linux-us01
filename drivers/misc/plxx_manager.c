@@ -165,13 +165,6 @@ static int plxx_parse_dt(struct device *dev, struct plxx_data *data)
   else
     return -EPROBE_DEFER;
   
-  //Configure the internal US01 I2C expander (U16, PCA9536) for ttyO1 multiplexing
-  tmp=0x0b;
-  data->ioexp_macc->write(data->ioexp_macc, &tmp, 3, sizeof(u8));
-  msleep(1);
-  tmp = 0x00;
-  data->ioexp_macc->write(data->ioexp_macc, &tmp, 1, sizeof(u8));
-  
   return 0;
 }
 #else
