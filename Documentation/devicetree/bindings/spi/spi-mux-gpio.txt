@@ -1,0 +1,113 @@
+GPIO-based SPI Chip Select Mux
+
+This binding describes a SPI bus multiplexer that uses GPIOs to route
+the SPI chip select signals. This can be used when you need more
+devices than the SPI controller has chip selects available.
+
+      MOSI /---------------------------+--------+--------+--------\
+      MISO |/-------------------------+|-------+|-------+|-------\|
+       SCL ||/-----------------------+||------+||------+||------\||
+           |||                       |||      |||      |||      |||
+    +------------+                   |||      |||      |||      |||
+    | SoC  |||   |                 +-+++-+  +-+++-+  +-+++-+  +-+++-+
+    |      |||   |                 | dev |  | dev |  | dev |  | dev |
+    |   +--+++-+ |  +------+\      +--+--+  +--+--+  +--+--+  +--+--+
+    |   | SPI  +-|--| Mux  |\\   CS-0 |        |        |        |
+    |   +------+ |  +--++--+\\\-------/   CS-1 |        |        |
+    |            |     ||   \\\----------------/   CS-2 |        |
+    |   +------+ |     ||    \\-------------------------/   CS-3 |
+    |   | GPIO |-|-----/|     \----------------------------------/
+    |   |      |-|------/
+    |   +------+ |
+    +------------+
+
+Required properties:
+- compatible: "spi-mux-gpio"
+- #address-cells: <1> (as for any SPI master device)
+- #size-cells: <0> (as for any SPI master device)
+- reg: chip select of the mux on the parent SPI master
+- spi-max-frequency: the maximum frequency allowed for any devices on
+  this mux
+- mux-gpios: list of gpios used to control the muxer
+* SPI child nodes, as if the mux is a real spi master
+
+A new SPI bus will be created. Then for each child node, a SPI device
+is created, with a virtual chip select on this bus according to the
+reg property.
+
+Whenever an access is made to a child device, the value set in the
+revelant node's reg property is interpreted as a bitmask defining the
+state of the mux-gpios gpio pins, with the least significant bit
+defining the state of first gpio, the next bit the state of the second
+gpio and so forth.
+
+The property spi-max-frequency is conceptually not needed, as each
+child node holds the maximum frequency specific to that
+device. However, the SPI core code wants every device in the tree to
+specify a maximum frequency. So because the mux is a device to a
+parent SPI master, you need to set a maximum frequency.  It's best to
+set this high, as the driver will take the minimum of this value and
+the child's maximum frequency value when doing a transfer to that
+child device.
+
+Example:
+       /*
+        * An SPI mux on chip select 1 of the spi1 peripheral controller of an
+
+        * am33xx soc. Chip select 0 is taken by another device, and the mux is
+        * on chip select 1. Behind the mux are 4 devices which are defined as
+        * if the spi-mux is a master.
+        */
+
+       spi1 {
+               compatible = "ti,omap4-mcspi";
+               status = "enabled";
+
+               spi-flash@0 {
+                       compatible = "m25p40";
+                       reg = <0>;
+                       spi-max-frequency = <10000000>;
+               };
+
+               spi-mux {
+                       compatible = "spi-mux-gpio";
+                       #address-cells = <1>;
+                       #size-cells = <0>;
+
+                       reg = <1>;
+                       spi-max-frequency = <100000000>;
+
+                       mux-gpios = <&gpio2 30 0 &gpio2 31 0>;
+
+                       spi-flash@0 {
+                               #address-cells = <1>;
+                               #size-cells = <1>;
+                               compatible = "sst,sst25vf016b";
+                               spi-max-frequency = <40000000>;
+                               reg = <0>;
+                       };
+
+                       spi-device@1 {
+                               compatible = "spidev";
+                               reg = <1>;
+                               spi-max-frequency = <10000000>;
+                       };
+
+                       spi-flash@2 {
+                               compatible = "winbond,w25q32";
+                               reg = <2>;
+                               spi-max-frequency = <20000000>;
+                       };
+
+                       mc13892@3 {
+                               #address-cells = <1>;
+                               #size-cells = <0>;
+                               compatible = "fsl,mc13892";
+                               spi-max-frequency = <6000000>;
+                               reg = <3>;
+
+                               /* more settings... */
+                       }
+
+               };
+       };

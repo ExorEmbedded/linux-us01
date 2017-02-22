@@ -2056,6 +2056,7 @@ CONFIG_SPI_TI_QSPI=y
 # CONFIG_SPI_XCOMM is not set
 # CONFIG_SPI_XILINX is not set
 # CONFIG_SPI_DESIGNWARE is not set
+CONFIG_SPI_MUX_GPIO=y
 
 #
 # SPI Protocol Masters
