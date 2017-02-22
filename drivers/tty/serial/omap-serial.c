@@ -42,8 +42,10 @@
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <linux/platform_data/serial-omap.h>
+#include <linux/of_platform.h>
 
 #include <dt-bindings/gpio/gpio.h>
+#include <linux/plxx_manager.h>
 
 #define OMAP_MAX_HSUART_PORTS	6
 
@@ -175,6 +177,8 @@ struct uart_omap_port {
 	u32			calc_latency;
 	struct work_struct	qos_work;
 	bool			is_suspending;
+	struct platform_device* plugin1dev;
+	struct platform_device* plugin2dev;
 };
 
 #define to_uart_omap_port(p)	((container_of((p), struct uart_omap_port, port)))
@@ -1471,7 +1475,8 @@ static int
 serial_omap_ioctl(struct uart_port *port, unsigned int cmd, unsigned long arg)
 {
 	struct serial_rs485 rs485conf;
-
+	struct uart_omap_port *up = to_uart_omap_port(port);
+	
 	switch (cmd) {
 	case TIOCSRS485:
 		if (copy_from_user(&rs485conf, (struct serial_rs485 *) arg,
@@ -1479,6 +1484,22 @@ serial_omap_ioctl(struct uart_port *port, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 
 		serial_omap_config_rs485(port, &rs485conf);
+
+		//Set duplex mode for RS485/422 plugin modules, according with RS485 or RS422 mode set
+		if (up->rs485.flags & SER_RS485_ENABLED)
+		    if (!gpio_is_valid(up->rxen_gpio)) 
+		    {
+		      unsigned int cmd;
+		      
+		      if(up->rs485.flags & SER_RS485_RX_DURING_TX)
+			cmd = RS422_485_IF_SETFD;
+		      else
+			cmd = RS422_485_IF_SETHD;
+		      if(up->plugin1dev) 
+			plxx_manager_sendcmd(up->plugin1dev , cmd); 
+		      if(up->plugin2dev) 
+			plxx_manager_sendcmd(up->plugin2dev , cmd); 
+		    } 
 		break;
 
 	case TIOCGRS485:
@@ -1652,6 +1673,7 @@ static int serial_omap_probe_rs485(struct uart_omap_port *up,
 	u32 rs485_delay[2];
 	enum of_gpio_flags flags;
 	int ret;
+	struct device_node *plxxnp;
 
 	rs485conf->flags = 0;
 	up->rts_gpio = -EINVAL;
@@ -1726,6 +1748,24 @@ static int serial_omap_probe_rs485(struct uart_omap_port *up,
 		rs485conf->flags |= SER_RS485_ENABLED;
 		if (gpio_is_valid(up->mode_gpio)) 
 		  gpio_set_value(up->mode_gpio, 1);
+	}
+	
+	/* Get handle to plugin plxx manager drivers (if any) */
+	up->plugin1dev = NULL;
+	up->plugin2dev = NULL;
+	
+	plxxnp = of_parse_phandle(np, "plugin1", 0);
+	if (plxxnp) 
+	{
+	  up->plugin1dev = of_find_device_by_node(plxxnp);
+	  of_node_put(plxxnp);
+	}
+
+	plxxnp = of_parse_phandle(np, "plugin2", 0);
+	if (plxxnp) 
+	{
+	  up->plugin2dev = of_find_device_by_node(plxxnp);
+	  of_node_put(plxxnp);
 	}
 
 	return 0;

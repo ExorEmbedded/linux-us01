@@ -289,6 +289,8 @@
 		uart1: serial@48022000 {
 			pinctrl-names = "default";
 			pinctrl-0 = <&uart1_pins>;
+			plugin1 = <&plxx0>;
+			plugin2 = <&plxx1>;
 
 			status = "okay";
 		};
