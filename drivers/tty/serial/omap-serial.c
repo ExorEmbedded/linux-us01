@@ -291,38 +291,60 @@ static void serial_omap_stop_tx(struct uart_port *port)
 
 	pm_runtime_get_sync(up->dev);
 
-	/* handle rs485 */
+	/* Handle RS-485 */
 	if (up->rs485.flags & SER_RS485_ENABLED) {
-		/* do nothing if current tx not yet completed */
-		res = serial_in(up, UART_LSR) & UART_LSR_TEMT;
-		if (!res)
-			return;
-
-		/* if there's no more data to send, turn off rts */
-		if (uart_circ_empty(xmit)) 
-		{
-		  if(gpio_is_valid(up->rts_gpio))
-		  {
-			  /* if rts not already disabled */
-			  res = (up->rs485.flags & SER_RS485_RTS_AFTER_SEND) ? 1 : 0;
-			  if (gpio_get_value(up->rts_gpio) != res) {
-				  if (up->rs485.delay_rts_after_send > 0) {
-					  mdelay(up->rs485.delay_rts_after_send);
+		if (up->scr & OMAP_UART_SCR_TX_EMPTY) {
+			/* THR interrupt is fired when both TX FIFO and TX
+			 * shift register are empty. This means there's nothing
+			 * left to transmit now, so make sure the THR interrupt
+			 * is fired when TX FIFO is below the trigger level,
+			 * disable THR interrupts and toggle the RS-485 GPIO
+			 * data direction pin if needed.
+			 */
+			up->scr &= ~OMAP_UART_SCR_TX_EMPTY;
+			serial_out(up, UART_OMAP_SCR, up->scr);
+			
+			/* if there's no more data to send, turn off rts */
+			if (uart_circ_empty(xmit)) 
+			{
+			  if(gpio_is_valid(up->rts_gpio))
+			  {
+				  /* if rts not already disabled */
+				  res = (up->rs485.flags & SER_RS485_RTS_AFTER_SEND) ? 1 : 0;
+				  if (gpio_get_value(up->rts_gpio) != res) {
+					  if (up->rs485.delay_rts_after_send > 0) {
+						  mdelay(up->rs485.delay_rts_after_send);
+					  }
+					  gpio_set_value(up->rts_gpio, res);
 				  }
-				  gpio_set_value(up->rts_gpio, res);
 			  }
-		  }
-		  else
-		  {
-		    //Enabled RS485/422 mode, but no rts_gpio pin available, use RTS native pin
-		    unsigned char tmpmcr;
-		    tmpmcr = serial_in(up, UART_MCR);
-		    tmpmcr &= ~UART_MCR_RTS;
-		    serial_out(up, UART_MCR, tmpmcr);
-		  }
+			  else
+			  {
+			    //Enabled RS485/422 mode, but no rts_gpio pin available, use RTS native pin
+			    unsigned char tmpmcr;
+			    if(!(up->rs485.flags & SER_RS485_RTS_AFTER_SEND))
+			    {
+			      tmpmcr = serial_in(up, UART_MCR);
+			      tmpmcr &= ~UART_MCR_RTS;
+			      serial_out(up, UART_MCR, tmpmcr);
+			    }
+			  }
+			}
+		} else {
+			/* We're asked to stop, but there's still stuff in the
+			 * UART FIFO, so make sure the THR interrupt is fired
+			 * when both TX FIFO and TX shift register are empty.
+			 * The next THR interrupt (if no transmission is started
+			 * in the meantime) will indicate the end of a
+			 * transmission. Therefore we _don't_ disable THR
+			 * interrupts in this situation.
+			 */
+			up->scr |= OMAP_UART_SCR_TX_EMPTY;
+			serial_out(up, UART_OMAP_SCR, up->scr);
+			return;
 		}
 	}
-
+	
 	if (up->ier & UART_IER_THRI) {
 		up->ier &= ~UART_IER_THRI;
 		serial_out(up, UART_IER, up->ier);
@@ -407,6 +429,10 @@ static void serial_omap_start_tx(struct uart_port *port)
 	/* handle rs485 */
 	if (up->rs485.flags & SER_RS485_ENABLED)
 	{
+	  /* Fire THR interrupts when FIFO is below trigger level */
+	  up->scr &= ~OMAP_UART_SCR_TX_EMPTY;
+	  serial_out(up, UART_OMAP_SCR, up->scr);
+	  
 	  if(gpio_is_valid(up->rts_gpio))
 	  {
 		/* if rts not already enabled */
@@ -1434,6 +1460,15 @@ serial_omap_config_rs485(struct uart_port *port, struct serial_rs485 *rs485conf)
 	up->ier = mode;
 	serial_out(up, UART_IER, up->ier);
 
+	/* If RS-485 is disabled, make sure the THR interrupt is fired when
+	 * TX FIFO is below the trigger level.
+	 */
+	if (!(up->rs485.flags & SER_RS485_ENABLED) &&
+	    (up->scr & OMAP_UART_SCR_TX_EMPTY)) {
+		up->scr &= ~OMAP_UART_SCR_TX_EMPTY;
+		serial_out(up, UART_OMAP_SCR, up->scr);
+	}
+	
 	spin_unlock_irqrestore(&up->port.lock, flags);
 	pm_runtime_mark_last_busy(up->dev);
 	pm_runtime_put_autosuspend(up->dev);
