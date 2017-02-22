@@ -370,14 +370,29 @@
 			bus-num = <0>;
 
 			status = "okay";
-			
-			fram: at25@3 {
-			  compatible = "atmel,at25", "st,m95256";
+
+			spi-mux {
+			  compatible = "spi-mux-gpio";
+			  #address-cells = <1>;
+			  #size-cells = <0>;
 			  reg = <0>;
 			  spi-max-frequency = <20000000>;
-			  pagesize = <64>;
-			  size = <65536>;
-			  address-width = <16>;
+			  mux-gpios = <&gpio0 27 0>;
+
+			  spidev0: spi0@0 {
+				  compatible = "spidev";
+				  reg = <0>;
+				  spi-max-frequency = <3000000>;
+			  };
+			  
+			  fram: at25@3 {
+			    compatible = "atmel,at25", "st,m95256";
+			    reg = <1>;
+			    spi-max-frequency = <20000000>;
+			    pagesize = <64>;
+			    size = <65536>;
+			    address-width = <16>;
+			  };
 			};
 
 			spidev1: spi0@1 {
