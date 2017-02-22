@@ -37,6 +37,7 @@
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <dt-bindings/gpio/gpio.h>
+#include <linux/plxx_manager.h>
 
 #define SEE_FUNCAREA_NBITS (SEE_FUNCAREALEN * 8)
 #define FULLEEPROMSIZE (256)
@@ -58,6 +59,55 @@ struct plxx_data
 
 static int UpdatePluginData(struct plxx_data *data);
 
+/* External function to sen commands to the plxx_manager driver from other drivers.
+ * Commands are actually implemented only for setting FullDuplex or HalfDuplex mode
+ * of the RS422/485 plugin modules
+ */
+int plxx_manager_sendcmd(struct platform_device *pdev, unsigned int cmd)
+{
+    struct plxx_data *data = dev_get_drvdata(&pdev->dev);
+    struct memory_accessor* ioexp_macc = data->ioexp_macc;  
+    
+    if(data == NULL)
+      return -EPROBE_DEFER;
+    
+    /* only supporting the 2 following commands */
+    if ((cmd != RS422_485_IF_SETFD) &&  (cmd != RS422_485_IF_SETHD))
+      return -ENOTSUPP;
+    
+    mutex_lock(&plxx_lock);
+    if(!data->f_updated)
+    {
+      UpdatePluginData(data);
+      data->f_updated = true;
+    }
+    
+    gpio_set_value_cansleep(data->sel_gpio, 1);                      //Select the plugin I2C bus
+    msleep(1);
+    
+    // If we have a RS485/422 plugin module (bit #3 in func. area) perform the command
+    if(data->eeprom[SEE_FUNCT_AREA_OFF] & (0x01 << RS422_485_IF_FLAG))
+    {
+      u8 tmp;
+      tmp=0x0e;
+      ioexp_macc->write(ioexp_macc, &tmp, 3, sizeof(u8));
+      msleep(1);
+      if(cmd == RS422_485_IF_SETFD)
+	tmp = 0x00;
+      else
+	tmp = 0x01;
+      
+      printk("plxx_manager_sendcmd cmd=0x%x\n",cmd);
+      ioexp_macc->write(ioexp_macc, &tmp, 1, sizeof(u8));
+    }
+    
+    gpio_set_value_cansleep(data->sel_gpio, 0);                      //Deselect the plugin I2C bus
+    msleep(1);
+    mutex_unlock(&plxx_lock);
+    return 0;
+}
+EXPORT_SYMBOL(plxx_manager_sendcmd);
+
 /*
  * static helper function for parsing the DTB tree
  */
@@ -70,7 +120,6 @@ static int plxx_parse_dt(struct device *dev, struct plxx_data *data)
   u32                 eeprom_handle;
   u32                 ioexp_handle;
   int                 ret;
-  u8                  tmp;
 
   /* Parse the DT to find the I2C SEEPROM bindings*/
   ret = of_property_read_u32(node, "eeprom", &eeprom_handle);
@@ -367,6 +416,62 @@ static ssize_t eeprom_write(struct file *filp, struct kobject *kobj, struct bin_
   return i;
 }
 
+/* Show the registers of the i2cexpander of the plugin as a raw file 
+ */
+static ssize_t i2cexpander_read(struct file *filp, struct kobject *kobj, struct bin_attribute *attr, char *buf, loff_t off, size_t count)
+{
+  struct plxx_data *data = dev_get_drvdata(container_of(kobj, struct device, kobj));
+  struct memory_accessor* macc = data->ioexp_macc;  
+
+  if(count == 0)
+    return count;
+  
+  mutex_lock(&plxx_lock);
+  
+  if(count > (FULLEEPROMSIZE - off))
+    count = FULLEEPROMSIZE - off;
+  
+  gpio_set_value_cansleep(data->sel_gpio, 1);                      //Select the plugin I2C bus
+  msleep(1);
+  
+  macc->read(macc, buf, off, count); 
+  msleep(1);
+  
+  gpio_set_value_cansleep(data->sel_gpio, 0);                      //Select the plugin I2C bus
+  mutex_unlock(&plxx_lock);
+  return count;
+}
+
+/* Write the registers of the i2cexpander of the plugin as a raw file 
+ */
+static ssize_t i2cexpander_write(struct file *filp, struct kobject *kobj, struct bin_attribute *attr, char *buf, loff_t off, size_t count)
+{
+  struct plxx_data *data = dev_get_drvdata(container_of(kobj, struct device, kobj));
+  struct memory_accessor* macc = data->ioexp_macc;  
+  int i;
+
+  if(count == 0)
+    return count;
+  
+  if(off >= FULLEEPROMSIZE)
+    return 0;
+  
+  mutex_lock(&plxx_lock);
+   
+  if(count > (FULLEEPROMSIZE - off))
+    count = FULLEEPROMSIZE - off;
+ 
+  gpio_set_value_cansleep(data->sel_gpio, 1);                      //Select the plugin I2C bus
+  msleep(1);
+  
+  i = macc->write(macc, buf, off, count); 
+  msleep(1);
+  
+  gpio_set_value_cansleep(data->sel_gpio, 0);                      //Select the plugin I2C bus
+  mutex_unlock(&plxx_lock);
+  return i;
+}
+
 static DEVICE_ATTR(installed, S_IRUGO, show_installed, NULL);
 static DEVICE_ATTR(hwcode, S_IRUGO, show_hwcode, NULL);
 static DEVICE_ATTR(hwsubcode, S_IRUGO, show_hwsubcode, NULL);
@@ -376,6 +481,7 @@ static DEVICE_ATTR(name, S_IRUGO, show_name, NULL);
 
 static BIN_ATTR_RO(func_bit_area, SEE_FUNCAREA_NBITS);
 static BIN_ATTR_RW(eeprom, FULLEEPROMSIZE);
+static BIN_ATTR_RW(i2cexpander, FULLEEPROMSIZE);
 
 static struct attribute *plxx_sysfs_attributes[] = {
   &dev_attr_installed.attr,
@@ -390,6 +496,7 @@ static struct attribute *plxx_sysfs_attributes[] = {
 static struct bin_attribute *plxx_sysfs_bin_attrs[] = {
   &bin_attr_func_bit_area,
   &bin_attr_eeprom,
+  &bin_attr_i2cexpander,  
   NULL,
 };
 
