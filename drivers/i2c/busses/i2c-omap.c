@@ -1134,6 +1134,7 @@ static void omap_i2c_prepare_recovery(struct i2c_bus_recovery_info *bri)
 
 	reg = omap_i2c_read_reg(dev, OMAP_I2C_SYSTEST_REG);
 	reg |= OMAP_I2C_SYSTEST_ST_EN;
+	reg |= (0x03 << OMAP_I2C_SYSTEST_TMODE_SHIFT);
 	omap_i2c_write_reg(dev, OMAP_I2C_SYSTEST_REG, reg);
 }
 
@@ -1145,6 +1146,8 @@ static void omap_i2c_unprepare_recovery(struct i2c_bus_recovery_info *bri)
 
 	reg = omap_i2c_read_reg(dev, OMAP_I2C_SYSTEST_REG);
 	reg &= ~OMAP_I2C_SYSTEST_ST_EN;
+	reg &= ~(0x03 << OMAP_I2C_SYSTEST_TMODE_SHIFT);
+
 	omap_i2c_write_reg(dev, OMAP_I2C_SYSTEST_REG, reg);
 }
 
