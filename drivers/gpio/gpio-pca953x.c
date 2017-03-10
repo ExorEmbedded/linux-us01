@@ -762,6 +762,7 @@ static int pca953x_probe(struct i2c_client *client,
 	int irq_base = 0;
 	int ret;
 	u32 invert = 0;
+	int restart_if_fails = 0;
 
 	chip = devm_kzalloc(&client->dev,
 			sizeof(struct pca953x_chip), GFP_KERNEL);
@@ -780,6 +781,9 @@ static int pca953x_probe(struct i2c_client *client,
 		/* If I2C node has no interrupts property, disable GPIO interrupts */
 		if (of_find_property(client->dev.of_node, "interrupts", NULL) == NULL)
 			irq_base = -1;
+		/* Flag to restart if probe fails */
+		if (of_find_property(client->dev.of_node, "restart-if-fails", NULL))
+			restart_if_fails = 1;
 #endif
 	}
 
@@ -803,15 +807,15 @@ static int pca953x_probe(struct i2c_client *client,
 	else
 		ret = device_pca957x_init(chip, invert);
 	if (ret)
-		return ret;
+		goto error_probe;
 
 	ret = pca953x_irq_setup(chip, id, irq_base);
 	if (ret)
-		return ret;
+		goto error_probe;
 
 	ret = gpiochip_add(&chip->gpio_chip);
 	if (ret)
-		return ret;
+		goto error_probe;
 
 	if (pdata && pdata->setup) {
 		ret = pdata->setup(client, chip->gpio_chip.base,
@@ -822,6 +826,12 @@ static int pca953x_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, chip);
 	return 0;
+
+error_probe:
+	if(restart_if_fails)
+	  emergency_restart();
+	return ret;
+
 }
 
 static int pca953x_remove(struct i2c_client *client)
