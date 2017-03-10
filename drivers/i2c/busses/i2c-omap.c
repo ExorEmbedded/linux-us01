@@ -44,6 +44,11 @@
 #include <linux/pm_runtime.h>
 #include <linux/pinctrl/consumer.h>
 
+/* Patch for 10Khz clock speed on MCP23016 gpio exp */ 
+#define MCPEXP_SADDR 0x20
+#define SCLL_LOFREQ  0xDA
+#define SCLH_HIFREQ  0xDC
+
 /* I2C controller revisions */
 #define OMAP_I2C_OMAP1_REV_2		0x20
 
@@ -279,6 +284,36 @@ static inline u16 omap_i2c_read_reg(struct omap_i2c_dev *i2c_dev, int reg)
 {
 	return __raw_readw(i2c_dev->base +
 				(i2c_dev->regs[reg] << i2c_dev->reg_shift));
+}
+
+/* Function to set the SCL clock frequency to about 9 Khz
+ */
+static void __omap_i2c_lowspeed(struct omap_i2c_dev *dev)
+{
+  /* Disable the I2C controller before changing frequency */
+  omap_i2c_write_reg(dev, OMAP_I2C_CON_REG, omap_i2c_read_reg(dev, OMAP_I2C_CON_REG) & ~(OMAP_I2C_CON_EN));
+  
+  /* SCL low and high time values */
+  omap_i2c_write_reg(dev, OMAP_I2C_SCLL_REG, SCLL_LOFREQ);
+  omap_i2c_write_reg(dev, OMAP_I2C_SCLH_REG, SCLH_HIFREQ);
+
+  /*Enable the I2C controller core*/
+  omap_i2c_write_reg(dev, OMAP_I2C_CON_REG, omap_i2c_read_reg(dev, OMAP_I2C_CON_REG) | OMAP_I2C_CON_EN);
+}
+
+/* Function to restore the nominal SCL clock frequency
+ */
+static void __omap_i2c_defaultspeed(struct omap_i2c_dev *dev)
+{
+  /* Disable the I2C controller before changing frequency */
+  omap_i2c_write_reg(dev, OMAP_I2C_CON_REG, omap_i2c_read_reg(dev, OMAP_I2C_CON_REG) & ~(OMAP_I2C_CON_EN));
+  
+  /* SCL low and high time values */
+  omap_i2c_write_reg(dev, OMAP_I2C_SCLL_REG, dev->scllstate);
+  omap_i2c_write_reg(dev, OMAP_I2C_SCLH_REG, dev->sclhstate);
+
+  /*Enable the I2C controller core*/
+  omap_i2c_write_reg(dev, OMAP_I2C_CON_REG, omap_i2c_read_reg(dev, OMAP_I2C_CON_REG) | OMAP_I2C_CON_EN);
 }
 
 static void __omap_i2c_init(struct omap_i2c_dev *dev)
@@ -647,6 +682,10 @@ omap_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	r = omap_i2c_wait_for_bb(dev);
 	if (r < 0)
 		goto out;
+	
+	/* Use low frequency SCL clock for MCP23016 gpio expander */
+	if(msgs[0].addr == MCPEXP_SADDR)
+	  __omap_i2c_lowspeed(dev);
 
 	if (dev->set_mpu_wkup_lat != NULL)
 		dev->set_mpu_wkup_lat(dev->dev, dev->latency);
@@ -662,6 +701,10 @@ omap_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 
 	omap_i2c_wait_for_bb(dev);
 
+	/* Restore default SCL clock frequency if MCP23016 gpio expander was addressed */
+	if(msgs[0].addr == MCPEXP_SADDR)
+	  __omap_i2c_defaultspeed(dev);
+	
 	if (dev->set_mpu_wkup_lat != NULL)
 		dev->set_mpu_wkup_lat(dev->dev, -1);
 
@@ -992,14 +1035,6 @@ omap_i2c_isr_thread(int this_irq, void *dev_id)
 			if (dev->fifo_size)
 				num_bytes = dev->buf_len;
 
-			/* Dirty patch to comply with clock strecthing of the MCP23016 of the eTOP705; this chip is supposed to be eventually at slave address 0x20 
-			   NOTE: This is a blocking delay (atomic context) but, since the MCP23016 is used only at system startup/configuration, it does not affect 
-			         performances during normal operation. */
-			if(saddr == 0x20)
-			{
-			  udelay(110);
-			}
-
 			ret = omap_i2c_transmit_data(dev, num_bytes, true);
 			if (ret < 0)
 				break;
@@ -1014,14 +1049,6 @@ omap_i2c_isr_thread(int this_irq, void *dev_id)
 
 			if (dev->threshold)
 				num_bytes = dev->threshold;
-
-			/* Dirty patch to comply with clock strecthing of the MCP23016 of the eTOP705; this chip is supposed to be eventually at slave address 0x20 
-			   NOTE: This is a blocking delay (atomic context) but, since the MCP23016 is used only at system startup/configuration, it does not affect 
-			         performances during normal operation. */
-			if(saddr == 0x20)
-			{
-			  udelay(110);
-			}
 
 			ret = omap_i2c_transmit_data(dev, num_bytes, false);
 			if (ret < 0)
