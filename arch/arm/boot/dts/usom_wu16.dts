@@ -403,6 +403,7 @@
 				interrupt-controller;
 				#interrupt-cells = <2>;
 				reg = <0x20>;
+				restart-if-fails;
 			};
 
 			pca9536: gpio@41 {
