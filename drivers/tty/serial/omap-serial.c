@@ -1135,6 +1135,16 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 	serial_out(up, UART_LCR, up->lcr);
 
 	serial_omap_set_mctrl(&up->port, up->port.mctrl);
+	
+	if (up->rs485.flags & SER_RS485_ENABLED)
+	  if (!gpio_is_valid(up->rts_gpio))
+	  {
+	    //Enabled RS485/422 mode, but no rts_gpio pin available, use RTS native pin
+	    unsigned char tmpmcr;
+	    tmpmcr = serial_in(up, UART_MCR);
+	    tmpmcr &= ~UART_MCR_RTS;
+	    serial_out(up, UART_MCR, tmpmcr);
+	  }
 
 	spin_unlock_irqrestore(&up->port.lock, flags);
 	pm_runtime_mark_last_busy(up->dev);
