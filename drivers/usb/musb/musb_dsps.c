@@ -323,6 +323,9 @@ static void sw_babble_control(struct musb *musb)
 	} else {
 		session_restart = 1;
 	}
+	
+	//Ticket #673: we need to force a session restart anyway in order to recover the MXT USB touch
+	session_restart = 1;
 
 	if (session_restart) {
 		u32 devctl;
