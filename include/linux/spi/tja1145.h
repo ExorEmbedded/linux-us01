@@ -27,7 +27,7 @@
 #include <linux/spi/spi.h>
 
 #define     MAJOR_DRIVER_VERS   1
-#define     MINOR_DRIVER_VERS   0
+#define     MINOR_DRIVER_VERS   1
 /***********************************/
 /****** TJA1145 SPI Registers ******/
 /***********************************/

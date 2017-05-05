@@ -182,6 +182,74 @@ static int c_can_plat_probe(struct platform_device *pdev)
 	}
 
 	priv = netdev_priv(dev);
+
+#if defined(CONFIG_CAN_TJA1145) || defined(CONFIG_CAN_TJA1145_MODULE)
+	/*
+	 * TJA1145 transceiver
+	 */
+	ret = of_property_read_u32(pdev->dev.of_node, "transceiver", &transceiver_handle);
+	if (ret != 0)
+	{
+		dev_info(&pdev->dev, "No managed transceiver found\n");
+	}
+	else
+	{
+		dev_info(&pdev->dev, "Managed transceiver found\n");
+		transceiver_node = of_find_node_by_phandle(transceiver_handle);
+		if (transceiver_node == NULL)
+		{
+			dev_err(&pdev->dev, "Failed to find transceiver node\n");
+			return -ENODEV;
+		}
+
+		priv->transceiver_client = of_find_spi_device_by_node(transceiver_node);
+		if (priv->transceiver_client == NULL)
+		{
+			dev_err(&pdev->dev, "Failed to find spi client\n");
+			of_node_put(transceiver_node);
+			ret = -EPROBE_DEFER;
+			goto exit_free_device;
+		}
+		/* release ref to the node and inc reference to the SPI client used */
+		of_node_put(transceiver_node);
+		transceiver_node = NULL;
+
+		/* And now get the I2C SEEPROM memory accessor */
+		priv->transceiver_macc = spi_tja1145_get_memory_accessor(priv->transceiver_client);
+		if (IS_ERR_OR_NULL(priv->transceiver_macc))
+		{
+			dev_err(&pdev->dev, "Failed to get memory accessor\n");
+			ret = -EPROBE_DEFER;
+			goto exit_free_device;
+		}
+		tja1145_driver_version();
+		priv->transceiver_macc->write(priv->transceiver_macc, (u8*)&tja_reg_val, REG_MODE_CONTROL, sizeof(u8));
+	}
+#endif
+
+	/*
+	 * Stand-By gpio
+	 */
+	priv->stb_gpio = of_get_named_gpio_flags(pdev->dev.of_node, "stb-gpio", 0,  &flags);
+	if (priv->stb_gpio == -EPROBE_DEFER)
+	{
+		ret = -EPROBE_DEFER;
+		goto exit_free_device;
+	}
+
+	if( (priv->stb_gpio >= 0) &&
+	    (gpio_is_valid(priv->stb_gpio))
+	  )
+	{
+		dev_info( &pdev->dev, "request GPIO (stb_gpio) = %d \n", priv->stb_gpio );
+		ret = gpio_request_one( priv->stb_gpio, flags, "stbgpio");
+		if (ret < 0) {
+			dev_err( &pdev->dev, "failed to request GPIO %d: %d\n", priv->stb_gpio, ret);
+			return -ENODEV;
+		}
+		gpio_set_value_cansleep(priv->stb_gpio, 1);
+	}
+
 	switch (id->driver_data) {
 	case BOSCH_C_CAN:
 		priv->regs = reg_map_c_can;
@@ -236,68 +304,6 @@ static int c_can_plat_probe(struct platform_device *pdev)
 			KBUILD_MODNAME, ret);
 		goto exit_free_device;
 	}
-
-	/*
-	 * Stand-By gpio
-	 */
-	priv->stb_gpio = of_get_named_gpio_flags(pdev->dev.of_node, "stb-gpio", 0,  &flags);
-	if (priv->stb_gpio == -EPROBE_DEFER)
-	    return -EPROBE_DEFER;
-
-	if( (priv->stb_gpio >= 0) &&
-	    (gpio_is_valid(priv->stb_gpio))
-	  )
-	{
-	    dev_info( &pdev->dev, "request GPIO (stb_gpio) = %d \n", priv->stb_gpio );
-	    ret = gpio_request_one( priv->stb_gpio, flags, "stbgpio");
-	    if (ret < 0) {
-			dev_err( &pdev->dev, "failed to request GPIO %d: %d\n", priv->stb_gpio, ret);
-			return -ENODEV;
-	    }
-	    gpio_set_value_cansleep(priv->stb_gpio, 1);
-	}
-
-#if defined(CONFIG_CAN_TJA1145) || defined(CONFIG_CAN_TJA1145_MODULE)
-    /*
-     * TJA1145 transceiver
-     */
-    ret = of_property_read_u32(pdev->dev.of_node, "transceiver", &transceiver_handle);
-    if (ret != 0)
-    {
-        dev_info(&pdev->dev, "No managed transceiver found\n");
-    }
-    else
-    {
-        dev_info(&pdev->dev, "Managed transceiver found\n");
-        transceiver_node = of_find_node_by_phandle(transceiver_handle);
-        if (transceiver_node == NULL)
-        {
-            dev_err(&pdev->dev, "Failed to find transceiver node\n");
-            return -ENODEV;
-        }
-
-        priv->transceiver_client = of_find_spi_device_by_node(transceiver_node);
-        if (priv->transceiver_client == NULL)
-        {
-            dev_err(&pdev->dev, "Failed to find spi client\n");
-            of_node_put(transceiver_node);
-            return -EPROBE_DEFER;
-        }
-        /* release ref to the node and inc reference to the SPI client used */
-        of_node_put(transceiver_node);
-        transceiver_node = NULL;
-
-        /* And now get the I2C SEEPROM memory accessor */
-        priv->transceiver_macc = spi_tja1145_get_memory_accessor(priv->transceiver_client);
-        if (IS_ERR_OR_NULL(priv->transceiver_macc))
-        {
-            dev_err(&pdev->dev, "Failed to get memory accessor\n");
-            return -ENODEV;
-        }
-        tja1145_driver_version();
-		 priv->transceiver_macc->write(priv->transceiver_macc, (u8*)&tja_reg_val, REG_MODE_CONTROL, sizeof(u8));
-    }
-#endif
 
 	dev_info(&pdev->dev, "%s device registered (regs=%p, irq=%d)\n",
 		 KBUILD_MODNAME, priv->base, dev->irq);

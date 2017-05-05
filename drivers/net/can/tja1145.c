@@ -1,5 +1,5 @@
 /*
- *  tja1145.c - Linux kernel module for uSxx working hours counters
+ *  tja1145.c - Linux kernel module for TJA1145 transceiver
  *
  *  Written by: Luigi Scagnet, Exor S.p.a.
  *  Copyright (c) 2017 Exor S.p.a.
@@ -44,7 +44,7 @@ static const struct spi_device_id tja1145_id[] = {
  */
 void tja1145_driver_version(void)
 {
-    //printk(KERN_INFO "Tja1145x driver version %d.%d \n",  MAJOR_DRIVER_VERS ,  MINOR_DRIVER_VERS );
+    printk(KERN_INFO "Tja1145x driver version %d.%d \n",  MAJOR_DRIVER_VERS ,  MINOR_DRIVER_VERS );
 }
 EXPORT_SYMBOL(tja1145_driver_version);
 
@@ -158,7 +158,7 @@ static int tja1145_probe(struct spi_device *spi)
     if(tmp < 0)
     {
 		dev_err(&spi->dev, "Probing Error: chip not compatible\n");
-		return -ENODEV;
+		return -EPROBE_DEFER;
     }
 
     data = devm_kzalloc(&spi->dev, sizeof(struct tja1145_data), GFP_KERNEL);
