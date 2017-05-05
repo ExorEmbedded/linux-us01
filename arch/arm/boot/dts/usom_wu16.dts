@@ -459,19 +459,11 @@
 			};
 
 			lps331ap@5c {
-				/* pressure sensor Carrier */
-				compatible = "lps331ap";
+				/* Pressure sensor LPS331AP */
+				compatible = "st,lps331ap";
 				reg = <0x5c>;
-				interrupt-parent = <&irq_map_lps>;
-				interrupts = <0>;
-
-				irq_map_lps: irq-map {
-					#interrupt-cells = <1>;
-					#address-cells = <0>;
-					#size-cells = <0>;
-					interrupt-map = <0 &pca9555 4 0>;
-				};
 			};
+
 /* END I2C DEVICES */
 		};
 
