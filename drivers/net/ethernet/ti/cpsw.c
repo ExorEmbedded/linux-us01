@@ -599,6 +599,9 @@ static void cpsw_set_promiscious(struct net_device *ndev, bool enable)
 
 			/* Flood All Unicast Packets to Host port */
 			cpsw_ale_control_set(ale, 0, ALE_P0_UNI_FLOOD, 1);
+
+			/* Enable Bypass */
+			cpsw_ale_control_set(ale, 0, ALE_BYPASS, 1);
 			dev_dbg(&ndev->dev, "promiscuity enabled\n");
 		} else {
 			/* Flood All Unicast Packets to Host port */
@@ -611,6 +614,9 @@ static void cpsw_set_promiscious(struct net_device *ndev, bool enable)
 				cpsw_ale_control_set(ale, i,
 						     ALE_PORT_NO_SA_UPDATE, 0);
 			}
+
+			/* Disable Bypass */
+			cpsw_ale_control_set(ale, 0, ALE_BYPASS, 0);
 			dev_dbg(&ndev->dev, "promiscuity disabled\n");
 		}
 	}
