@@ -111,7 +111,7 @@
 				0x160 (PIN_INPUT_PULLUP | MUX_MODE0)    /* spi0_cs1.spi0_cs1 */
 				0x02C (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad11, SEL_CS_SP1 gpio, pullup (Select FRAM) */
 				0x028 (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad10, SEL_CS_SP2 gpio, pullup */
-				0x024 (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad9 SEL_SER_CAN: gpio, pulldown */
+				0x024 (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad9 SEL_SER_CAN: gpio, pullup */
 			>;
 		};
 		
@@ -119,8 +119,6 @@
 			pinctrl-single,pins = <
 				0x170 (PIN_INPUT_PULLUP | MUX_MODE0)	/* uart0_rxd.uart0_rxd */
 				0x174 (PIN_OUTPUT_PULLDOWN | MUX_MODE0)	/* uart0_txd.uart0_txd */
-				0x168 (PIN_INPUT | MUX_MODE0)		/* uart0_ctsn.uart0_ctsn */
-				0x16C (PIN_OUTPUT_PULLDOWN | MUX_MODE0)	/* uart0_rtsn.uart0_rtsn */
 			>;
 		};
 
@@ -240,6 +238,8 @@
 				0x13c ( PIN_OUTPUT | MUX_MODE7 ) /* (L15) gmii1_rxd1.gpio2[20]   OUT3  */
 				0x140 ( PIN_OUTPUT | MUX_MODE7 ) /* (M16) gmii1_rxd0.gpio2[21]   OUT4  */
 				0x190 ( PIN_OUTPUT | MUX_MODE7 ) /* (A13) mcasp0_aclkx.gpio3[14] EN12  */
+				0x168 ( PIN_OUTPUT | MUX_MODE7 ) /* (E18) uart0_ctsn.gpio1[8]    WIFI_RST */
+				0x16c ( PIN_INPUT  | MUX_MODE7 ) /* (E17) uart0_rtsn.gpio1[9] */
 			>;
 		};
 
