@@ -108,6 +108,7 @@
 				0x154 (PIN_INPUT_PULLUP | MUX_MODE0)    /* spi0_d0.spi0_d0 */
 				0x158 (PIN_INPUT_PULLUP | MUX_MODE0)    /* spi0_d1.spi0_d1 */
 				0x15c (PIN_INPUT_PULLUP | MUX_MODE0)    /* spi0_cs0.spi0_cs0 */
+				0x160 (PIN_INPUT_PULLUP | MUX_MODE0)    /* spi0_cs1.spi0_cs1 */
 				0x02C (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad11, SEL_CS_SP1 gpio, pullup (Select FRAM) */
 				0x028 (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad10, SEL_CS_SP2 gpio, pullup */
 				0x024 (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad9 SEL_SER_CAN: gpio, pulldown */
@@ -456,6 +457,7 @@
 		spi0: spi@48030000 {
 			pinctrl-names = "default";
 			pinctrl-0 = <&spi0_pins>;
+			bus-num = <0>;
 			status = "okay";
 
 			spi-mux {
@@ -467,7 +469,6 @@
 				mux-gpios = <&gpio0 27 0>;
 
 				tja1145: tja1145@0 {
-				/* CS0 TJA1145 */
 				    compatible = "nxp,tja1145";
 				    //compatible = "spidev";
 				    reg = <0>;
