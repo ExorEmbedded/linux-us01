@@ -108,6 +108,9 @@
 				0x154 (PIN_INPUT_PULLUP | MUX_MODE0)    /* spi0_d0.spi0_d0 */
 				0x158 (PIN_INPUT_PULLUP | MUX_MODE0)    /* spi0_d1.spi0_d1 */
 				0x15c (PIN_INPUT_PULLUP | MUX_MODE0)    /* spi0_cs0.spi0_cs0 */
+				0x02C (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad11, SEL_CS_SP1 gpio, pullup (Select FRAM) */
+				0x028 (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad10, SEL_CS_SP2 gpio, pullup */
+				0x024 (PIN_OUTPUT_PULLUP | MUX_MODE7)   /* gpmc_ad9 SEL_SER_CAN: gpio, pulldown */
 			>;
 		};
 		
@@ -292,14 +295,6 @@
 		
 		lcd_pins_default: lcd_pins_default {
 			pinctrl-single,pins = <
-				0x20 0x01	/* gpmc_ad8.lcd_data16, OUTPUT | MODE1 */
-				0x24 0x01	/* gpmc_ad9.lcd_data17, OUTPUT | MODE1 */
-				0x28 0x01	/* gpmc_ad10.lcd_data18, OUTPUT | MODE1 */
-				0x2c 0x01	/* gpmc_ad11.lcd_data19, OUTPUT | MODE1 */
-				/*Removed to enable 8-bit MMC 0x30 0x01	/* gpmc_ad12.lcd_data20, OUTPUT | MODE1 */
-				/*Removed to enable 8-bit MMC 0x34 0x01	/* gpmc_ad13.lcd_data21, OUTPUT | MODE1 */
-				/*Removed to enable 8-bit MMC 0x38 0x01	/* gpmc_ad14.lcd_data22, OUTPUT | MODE1 */
-				/*Removed to enable 8-bit MMC 0x3c 0x01	/* gpmc_ad15.lcd_data23, OUTPUT | MODE1 */
 				0xa0 0x00	/* lcd_data0.lcd_data0, OUTPUT | MODE0 */
 				0xa4 0x00	/* lcd_data1.lcd_data1, OUTPUT | MODE0 */
 				0xa8 0x00	/* lcd_data2.lcd_data2, OUTPUT | MODE0 */
@@ -325,14 +320,6 @@
 
 		lcd_pins_sleep: lcd_pins_sleep {
 			pinctrl-single,pins = <
-				0x20 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad8.lcd_data16 */
-				0x24 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad9.lcd_data17 */
-				0x28 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad10.lcd_data18 */
-				0x2c (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad11.lcd_data19 */
-				/*Removed to enable 8-bit MMC 0x30 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad12.lcd_data20 */
-				/*Removed to enable 8-bit MMC 0x34 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad13.lcd_data21 */
-				/*Removed to enable 8-bit MMC 0x38 (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad14.lcd_data22 */
-				/*Removed to enable 8-bit MMC 0x3c (PIN_INPUT_PULLDOWN | MUX_MODE7)	/* gpmc_ad15.lcd_data23 */
 				0xa0 (PULL_DISABLE | MUX_MODE7)		/* lcd_data0.lcd_data0 */
 				0xa4 (PULL_DISABLE | MUX_MODE7)		/* lcd_data1.lcd_data1 */
 				0xa8 (PULL_DISABLE | MUX_MODE7)		/* lcd_data2.lcd_data2 */
@@ -405,15 +392,14 @@
 				reg = <0x20>;
 				restart-if-fails;
 			};
-
+/*
 			pca9536: gpio@41 {
-				/* I/O expander SPIChipSelect / CanSelect uSom */
 				compatible = "ti,pca9536";
 				reg = <0x41>;
 				gpio-controller;
 				#gpio-cells = <2>;
 			};
-
+*/
 			tps: tps@2d {
 				/* Chip alimentazioni uSom */
 				reg = <0x2d>;
@@ -472,24 +458,31 @@
 			pinctrl-0 = <&spi0_pins>;
 			status = "okay";
 
-/* USOM SPI DEVICES */		
-//			fram: at25@3 {
-//				/* FRAM uSom */
-//			  compatible = "atmel,at25", "st,m95256";
-//			  reg = <0>;
-//			  spi-max-frequency = <20000000>;
-//			  pagesize = <64>;
-//			  size = <65536>;
-//			  address-width = <16>;
-//			};
+			spi-mux {
+				compatible = "spi-mux-gpio";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0>;
+				spi-max-frequency = <20000000>;
+				mux-gpios = <&gpio0 27 0>;
 
-/* CARRIER SPI DEVICES */
-			tja1145: tja1145@0 {
-			    /* CS0 TJA1145 */
-			    compatible = "nxp,tja1145";
-			    reg = <0>;
-			    spi-cpha;
-			    spi-max-frequency = <500000>;
+				tja1145: tja1145@0 {
+				/* CS0 TJA1145 */
+				    compatible = "nxp,tja1145";
+				    //compatible = "spidev";
+				    reg = <0>;
+				    spi-cpha;
+				    spi-max-frequency = <500000>;
+				};
+
+				fram: at25@3 {
+				    compatible = "atmel,at25", "st,m95256";
+				    reg = <1>;
+				    spi-max-frequency = <20000000>;
+				    pagesize = <64>;
+				    size = <65536>;
+				    address-width = <16>;
+				};
 			};
 		};
 		
@@ -610,7 +603,7 @@
 	  backlight = <&pwm_bl00>;
 	  rtcnvram = <&m41t83>;
 	};
-
+/*
 	csman0: csman0 {
 		compatible = "exor,plxx_manager";
 		sel-cs-sp1-gpio = <&pca9536 0 0>;
@@ -624,6 +617,7 @@
 		enable-can;
 		status = "okay";
 	};
+*/
 	
 	beeper {
 	  compatible = "pwm-beeper";
