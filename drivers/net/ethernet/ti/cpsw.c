@@ -1356,9 +1356,6 @@ static int cpsw_ndo_stop(struct net_device *ndev)
 	pm_runtime_put_sync(&priv->pdev->dev);
 	if (priv->data.dual_emac)
 		priv->slaves[priv->emac_port].open_stat = false;
-
-	if (reenable_intr)
-		cpsw_intr_enable(priv);
 	
 	return 0;
 }
