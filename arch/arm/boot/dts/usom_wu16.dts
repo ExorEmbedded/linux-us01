@@ -13,6 +13,11 @@
 	model = "usom_wu16";
 	compatible = "ti,am335x-evm", "ti,am33xx";
 
+	aliases {
+		can0 = &dcan0;
+		can1 = &dcan1;
+	};
+
 	cpus {
 		cpu@0 {
 			cpu0-supply = <&vdd1_reg>;
@@ -604,21 +609,6 @@
 	  backlight = <&pwm_bl00>;
 	  rtcnvram = <&m41t83>;
 	};
-/*
-	csman0: csman0 {
-		compatible = "exor,plxx_manager";
-		sel-cs-sp1-gpio = <&pca9536 0 0>;
-		enable-spi1-cs0;
-		//enable-spi1-csfr
-		sel-cs-sp2-gpio = <&pca9536 1 0>;
-		//enable-spi2-cs0;
-		enable-spi2-cs1;
-		sel-ser3-can-gpio = <&pca9536 2 0>;
-		//enable-serial3;
-		enable-can;
-		status = "okay";
-	};
-*/
 	
 	beeper {
 	  compatible = "pwm-beeper";

@@ -179,6 +179,7 @@ struct c_can_priv {
 #endif
 };
 
+struct net_device *alloc_c_can_dev_alias(const char *alias);
 struct net_device *alloc_c_can_dev(void);
 void free_c_can_dev(struct net_device *dev);
 int register_c_can_dev(struct net_device *dev);

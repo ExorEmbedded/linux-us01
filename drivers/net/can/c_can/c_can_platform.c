@@ -116,7 +116,7 @@ static int c_can_plat_probe(struct platform_device *pdev)
 {
 	int ret;
 	void __iomem *addr;
-	struct net_device *dev;
+	struct net_device *dev = NULL;
 	struct c_can_priv *priv;
 	const struct of_device_id *match;
 	const struct platform_device_id *id;
@@ -174,8 +174,20 @@ static int c_can_plat_probe(struct platform_device *pdev)
 		goto exit_release_mem;
 	}
 
+	if (pdev->dev.of_node)
+	{
+		int id = of_alias_get_id(pdev->dev.of_node, "can");
+		if (id >= 0)
+		{
+			char name[IFNAMSIZ];
+			snprintf(name, sizeof(name), "can%d", id);
+			dev = alloc_c_can_dev_alias(name);
+		}
+	}
+
 	/* allocate the c_can device */
-	dev = alloc_c_can_dev();
+	if (!dev)
+		dev = alloc_c_can_dev();
 	if (!dev) {
 		ret = -ENOMEM;
 		goto exit_iounmap;
