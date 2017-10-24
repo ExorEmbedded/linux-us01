@@ -149,6 +149,19 @@ static int __init getdispid(char* str)
 }
 __setup("hw_dispid=",getdispid);
 
+/*----------------------------------------------------------------------------------------------------------------*
+Export the hw_switch variable, defining the eth mode passed from cmdline.
+*----------------------------------------------------------------------------------------------------------------*/
+unsigned char hw_switch = 0xFF; //This variable will hold the display id value, when passed from the cmdline
+EXPORT_SYMBOL(hw_switch);
+
+static int __init getswitchmode(char* str)
+{
+  hw_switch = simple_strtol(str, NULL, 0);
+  return 1;
+}
+__setup("hw_switch=",getswitchmode);
+
 /*
  * If set, this is an indication to the drivers that reset the underlying
  * device before going ahead with the initialization otherwise driver might
