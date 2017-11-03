@@ -1053,7 +1053,7 @@ static irqreturn_t lcdc_irq_handler_rev02(int irq, void *arg)
 	struct da8xx_fb_par *par = arg;
 	u32 stat = lcdc_read(LCD_MASKED_STAT_REG);
 
-	if ((stat & LCD_SYNC_LOST) && (stat & LCD_FIFO_UNDERFLOW)) {
+	if ((stat & LCD_SYNC_LOST) || (stat & LCD_FIFO_UNDERFLOW)) {
 		lcd_disable_raster(DA8XX_FRAME_NOWAIT);
 		lcdc_write(stat, LCD_MASKED_STAT_REG);
 		lcd_enable_raster();
@@ -1120,7 +1120,7 @@ static irqreturn_t lcdc_irq_handler_rev01(int irq, void *arg)
 	u32 stat = lcdc_read(LCD_STAT_REG);
 	u32 reg_ras;
 
-	if ((stat & LCD_SYNC_LOST) && (stat & LCD_FIFO_UNDERFLOW)) {
+	if ((stat & LCD_SYNC_LOST) || (stat & LCD_FIFO_UNDERFLOW)) {
 		lcd_disable_raster(DA8XX_FRAME_NOWAIT);
 		lcdc_write(stat, LCD_STAT_REG);
 		lcd_enable_raster();
