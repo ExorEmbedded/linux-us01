@@ -424,7 +424,7 @@
 			};
 /* CARRIER I2C DEVICES */
 			lis331dlh@18 {
-				/* pressure sensor Carrier */
+				/* Accelerometer sensor Carrier */
 				compatible = "lis331dlh";
 				reg = <0x18>;
 				interrupt-parent = <&irq_map_lis>;
@@ -454,6 +454,12 @@
 				/* Pressure sensor LPS331AP */
 				compatible = "st,lps331ap";
 				reg = <0x5c>;
+			};
+
+			lps22hb@5d {
+				/* Pressure sensor LPS22HB */
+				compatible = "st,lps22hb";
+				reg = <0x5d>;
 			};
 
 /* END I2C DEVICES */
