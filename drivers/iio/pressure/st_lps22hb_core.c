@@ -318,10 +318,11 @@ static int st_lps22hb_read_raw(struct iio_dev *indio_dev,
 		ret = IIO_VAL_INT;
 		break;
     
-    case IIO_CHAN_INFO_OFFSET:
-        *val = 0;
+	case IIO_CHAN_INFO_OFFSET:
+		*val = 0;
 		*val2 = 0;
-        return IIO_VAL_FRACTIONAL;
+		ret =  IIO_VAL_INT;
+		break;
 	default:
 		ret = -EINVAL;
 		break;
