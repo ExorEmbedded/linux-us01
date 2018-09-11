@@ -384,8 +384,6 @@ static void transmit_chars(struct uart_omap_port *up, unsigned int lsr)
 {
 	struct circ_buf *xmit = &up->port.state->xmit;
 	int count;
-	struct tty_port *ttyport = &up->port.state->port;
-	static int txfullflag;
 
 	if (up->port.x_char) {
 		serial_out(up, UART_TX, up->port.x_char);
@@ -397,12 +395,6 @@ static void transmit_chars(struct uart_omap_port *up, unsigned int lsr)
 		serial_omap_stop_tx(&up->port);
 		return;
 	}
-
-	if((ttyport->low_latency) && (txfullflag == 0))
-	{	//Low latency option for MPI protocol. Disable UART while feeding the TX FIFO
-		serial_out(up, UART_OMAP_MDR1, UART_OMAP_MDR1_DISABLE);
-	}
-
 	count = up->port.fifosize / 4;
 	do {
 		serial_out(up, UART_TX, xmit->buf[xmit->tail]);
@@ -412,22 +404,14 @@ static void transmit_chars(struct uart_omap_port *up, unsigned int lsr)
 			break;
 	} while (--count > 0);
 
-	if((ttyport->low_latency) && (txfullflag == 0))
-	{	//Low latency option for MPI protocol. Reenable UART after TX FIFO was written
-		serial_out(up, UART_OMAP_MDR1, up->mdr1);
-	}
-
 	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS) {
 		spin_unlock(&up->port.lock);
 		uart_write_wakeup(&up->port);
 		spin_lock(&up->port.lock);
 	}
 
-	txfullflag=0;
 	if (uart_circ_empty(xmit))
 		serial_omap_stop_tx(&up->port);
-	else
-		txfullflag=1;
 }
 
 static inline void serial_omap_enable_ier_thri(struct uart_omap_port *up)
