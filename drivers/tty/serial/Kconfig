@@ -1096,6 +1096,19 @@ config SERIAL_OMAP
 	  with the omap-serial driver. DMA support can be enabled from platform
 	  data.
 
+config SERIAL_OMAP_EXOR
+	tristate "EXOR OMAP serial port support"
+	depends on ARCH_OMAP2PLUS
+	depends on !SERIAL_OMAP
+	select SERIAL_CORE
+	help
+	  If you have a machine based on an Texas Instruments OMAP CPU you
+	  can enable its onboard serial ports by enabling this option.
+
+	  By enabling this option you take advantage of dma feature available
+	  with the omap-serial driver. DMA support can be enabled from platform
+	  data.
+	  
 config SERIAL_OMAP_CONSOLE
 	bool "Console on OMAP serial port"
 	depends on SERIAL_OMAP=y
