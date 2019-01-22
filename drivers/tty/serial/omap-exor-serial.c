@@ -4146,45 +4146,6 @@ void ev_move(struct s_MPIdata *pMPIdata, unsigned char ev)
    }
 }
 
-void setRxFifoThrForMPI(struct uart_omap_port *up, int status)
-{
-	unsigned int TLRtmp;
-	/* FIFOs and DMA Settings */
-
-	/* FCR can be changed only when the
-	 * baud clock is not running
-	 * DLL_REG and DLH_REG set to 0.
-	 */
-
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_A);
-	serial_out(up, UART_DLL, 0);
-	serial_out(up, UART_DLM, 0);
-	serial_out(up, UART_LCR, 0);
-
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_B);
-
-	up->efr = serial_in(up, UART_EFR) & ~UART_EFR_ECB;
-	up->efr &= ~UART_EFR_SCD;
-	serial_out(up, UART_EFR, up->efr | UART_EFR_ECB);
-
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_A);
-	up->mcr = serial_in(up, UART_MCR) & ~UART_MCR_TCRTLR;
-	serial_out(up, UART_MCR, up->mcr | UART_MCR_TCRTLR);
-	/* FIFO ENABLE, DMA MODE */
-
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_B);
-
-	TLRtmp = serial_in(up, UART_OMAP_TLR) & 0x0f;
-	serial_out(up, UART_OMAP_TLR, ((status)?0x8F:0) | TLRtmp);	//rxFIFOth=33, txFIFth=60
-
-	/* Reset UART_MCR_TCRTLR: this must be done with the EFR_ECB bit set */
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_A);
-	serial_out(up, UART_MCR, up->mcr);
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_B);
-	serial_out(up, UART_EFR, up->efr);
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_A);
-}
-
 void MPIDriverOpen(struct s_MPIdata *pMPIdata, struct s_MPIparams init)
 {
 	if (pMPIdata->m_isOpen)
@@ -4706,6 +4667,7 @@ static int serial_omap_startup(struct uart_port *port)
 	up->port_activity = jiffies;
 #ifdef EXOR_MPI
 	up->MPIdata.MPIenabled = false;
+	up->MPIdata.MPImode = false;
 #endif
 	return 0;
 }
@@ -4910,12 +4872,12 @@ static void serial_omap_set_termios(struct uart_port *port, struct ktermios *ter
 	up->fcr &= ~OMAP_UART_FCR_RX_FIFO_TRIG_MASK;
 	up->fcr &= ~OMAP_UART_FCR_TX_FIFO_TRIG_MASK;
 	up->fcr |= UART_FCR6_R_TRIGGER_16 | UART_FCR6_T_TRIGGER_24 | UART_FCR_ENABLE_FIFO;	//rxFIFOth=1 txFIFOth=56
-#ifdef EXOR_MPI
-	setRxFifoThrForMPI(up, (up->MPIdata.MPImode)?true:false);
-#endif
 	serial_out(up, UART_FCR, up->fcr);
 	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_B);
 
+#ifdef EXOR_MPI
+	serial_out(up, UART_OMAP_TLR, ((up->MPIdata.MPImode)?0x8F:0));	//rxFIFOth=33, txFIFth=60
+#endif
 	serial_out(up, UART_OMAP_SCR, up->scr);
 
 	/* Reset UART_MCR_TCRTLR: this must be done with the EFR_ECB bit set */
