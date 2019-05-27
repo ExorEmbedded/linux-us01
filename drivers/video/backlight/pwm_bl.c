@@ -97,16 +97,51 @@ int dispid_get_backlight(struct pwm_bl_data* pb, int dispid, int maxlevels)
   if(displayconfig[i].brightness_max > 100)
     displayconfig[i].brightness_max = 100;
   
-  if(displayconfig[i].brightness_min > displayconfig[i].brightness_max)
+  if((displayconfig[i].brightness_min & 0xff) > displayconfig[i].brightness_max)
     displayconfig[i].brightness_min = displayconfig[i].brightness_max;
     
   if(maxlevels > 1) 
-    step = 100 * (displayconfig[i].brightness_max - displayconfig[i].brightness_min) / (maxlevels-1);
+    step = 100 * (displayconfig[i].brightness_max - (displayconfig[i].brightness_min & 0xff)) / (maxlevels-1);
   for(j=1; j<maxlevels; j++)
-    pb->levels[j] = displayconfig[i].brightness_min + (step *(j-1))/100;
+    pb->levels[j] = (displayconfig[i].brightness_min & 0xff) + (step *(j-1))/100;
   
   pb->levels[1] = displayconfig[i].brightness_min;
   pb->levels[maxlevels] = displayconfig[i].brightness_max;
+  
+  /* BSP-1559: Create brightness curve for zero dimming feature (3 segments envelope) */
+  if((displayconfig[i].brightness_min & 0xff00) && (maxlevels > 16)) 
+  {
+    int lev;
+
+    /* 1st segment m=brightness_min */
+    step = (displayconfig[i].brightness_min >> 8) & 0xff;
+    for(j=2; j<7; j++)
+    {
+      lev = j*step;
+      if(lev < 255)
+	pb->levels[j] = (lev << 8) & 0xff00;
+      else
+	pb->levels[j] = lev / 100;
+    }
+    
+    /* 2nd segment m=1 */
+    lev = (lev/100) + 1;
+    for(j=7; j<10; j++)
+      pb->levels[j] = lev++;
+    
+    lev++;
+    pb->levels[j] = lev;
+    
+    /* 3rd segment: interpolation till brightness_max */
+    step = 100 * (displayconfig[i].brightness_max - lev) / (maxlevels-j);
+    for(j=11;j<maxlevels; j++)
+      pb->levels[j] = lev + (step *(j-10))/100;
+    
+    pb->levels[maxlevels] = displayconfig[i].brightness_max;
+  }
+  
+  for(j=1; j<(maxlevels+1); j++)
+    printk("j=%d lev=%d \n",j,pb->levels[j]);
 
   return 0;
 }
@@ -154,6 +189,14 @@ static int compute_duty_cycle(struct pwm_bl_data *pb, int brightness)
 		duty_cycle = pb->levels[brightness];
 	else
 		duty_cycle = brightness;
+	
+	/* BSP-1559: handle special brightness dimming values */
+	if(pb->levels)
+	  if(duty_cycle & 0xff00)
+	    {
+	      duty_cycle = ((duty_cycle >> 8) & 0xff);
+	      return ((duty_cycle * pb->period) / (pb->scale * 100));
+	    }
 
 	return (duty_cycle * (pb->period - lth) / pb->scale) + lth;
 }
