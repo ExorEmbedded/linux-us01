@@ -530,8 +530,6 @@ static int titsc_probe(struct platform_device *pdev)
 		goto err_free_mem;
 	}
 
-	titsc_writel(ts_dev, REG_IRQENABLE, IRQENB_FIFO0THRES);
-	titsc_writel(ts_dev, REG_IRQENABLE, IRQENB_EOS);
 	err = titsc_config_wires(ts_dev);
 	if (err) {
 		dev_err(&pdev->dev, "wrong i/p wire configuration\n");
@@ -566,6 +564,9 @@ static int titsc_probe(struct platform_device *pdev)
 	tmr->timer_ts_dev = ts_dev;
 	tmr->timer.function = ts_tmr_callback;
 
+	titsc_writel(ts_dev, REG_IRQENABLE, IRQENB_FIFO0THRES);
+	titsc_writel(ts_dev, REG_IRQENABLE, IRQENB_EOS);
+	
 	return 0;
 
 err_free_irq:
