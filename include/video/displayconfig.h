@@ -596,8 +596,8 @@ static struct t_DisplayParams displayconfig[] = {
         
         .blank_inv      = 0,
         
-        .pwmfreq        = 5000,
-        .brightness_min = 0x0D00,	/* BSP-1559 : Brightness min=0.13% */
+        .pwmfreq        = 6000,
+        .brightness_min = 0x0700,	/* BSP-1559 : Brightness min=0.07% */
         .brightness_max = 80,
     },  
     /* 52: Evervision VGG804806_PWM for ALTERA kit 800x480*/
