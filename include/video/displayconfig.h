@@ -79,7 +79,13 @@
  *1.24			SS							18.02.2019  Added display code #68: Qitex QX-050WVGA0TLT01D 800x480 for ex705
  *1.25			GP							04/2019	    Added display code #69 Futurelabs FLC-1234ML3000SA1 Dual LVDS 24 bit 1920x720
  *1.26			GP							05/2019	    Updated the brightness_min field for ticket BSP-1559
- * NEXT AVAILABLE DISPLAY CODE: 70
+ *1.27			GP							05/2019	    Updated the brightness_min field for ticket BSP-1559 on display code #65, #55
+ *1.28			SS							17.06.2019  Added display code #70: Innolux G156HCE-L01 LVDS 24 bit 1920x1080 for serie jSMART
+ *1.29			SS							28.06.2019	Modified display code #51:Updated the brightness_min (0.07%) and PWM (6kHz) fields for ticket BSP-1559
+ *1.30			SS							11.07.2019	Modified display code #36: for AB19 display 10" G104AGE-L02
+ *																			Modified display code #39: for AB19 display 15" G150XNE-L01
+
+ * NEXT AVAILABLE DISPLAY CODE: 71
  */
  
 #ifndef DISPLAYCONFIG_H
@@ -184,14 +190,14 @@ static struct t_DisplayParams displayconfig[] = {
         .brightness_min = 20,
         .brightness_max = 100,
     },
-    /* 36: AUO G104SN02_V2 800x600*/
+    /* 36: Innolux G104AGE-L02 800x600 for AB19*/
     {
         .dispid    = 36,
         .rezx      = 800, 
         .rezy      = 600, 
         .bpp       = 16,
         
-        .pclk_freq = 41000, 
+        .pclk_freq = 36000, 
         .pclk_inv  = 1,
         
         .hs_fp     = 16, 
@@ -206,8 +212,8 @@ static struct t_DisplayParams displayconfig[] = {
         
         .blank_inv      = 0,
         
-        .pwmfreq        = 10000,
-        .brightness_min = 5,
+        .pwmfreq        = 200,
+        .brightness_min = 2,
         .brightness_max = 100,
     },
     /* 37: Powertip 320x240 */
@@ -262,7 +268,7 @@ static struct t_DisplayParams displayconfig[] = {
         .brightness_min = 5,
         .brightness_max = 100,
     },
-    /* 39: AUO G150XG01 1024x768*/
+    /* 39: Innolux G150XNE-L01 1024x768 for AB19*/
     {
         .dispid    = 39,
         .rezx      = 1024, 
@@ -284,8 +290,8 @@ static struct t_DisplayParams displayconfig[] = {
         
         .blank_inv      = 0,
         
-        .pwmfreq        = 10000,
-        .brightness_min = 5,
+        .pwmfreq        = 200,
+        .brightness_min = 1,
         .brightness_max = 100,
     },
     /* 40: Innolux AT050TN33 480x272*/
@@ -649,7 +655,7 @@ static struct t_DisplayParams displayconfig[] = {
         .blank_inv      = 0,
         
         .pwmfreq        = 200,
-        .brightness_min = 10,
+        .brightness_min = 0x3200, 		/* BSP-1559 : Brightness min=0.50% */
         .brightness_max = 100,
     },              
     /* 56: Innolux G156BGE-L01 LVDS 24 bit 1366x768 IMX.6 ONLY */
@@ -909,7 +915,7 @@ static struct t_DisplayParams displayconfig[] = {
         .blank_inv      = 0,
         
         .pwmfreq        = 10000,  
-        .brightness_min = 10,
+        .brightness_min = 0x0F00, 		/* BSP-1559 : Brightness min=0.15% */
         .brightness_max = 100,
     },   
     /* 66:DISPJST-005N001 800x480 for Jsmart05 */
@@ -1015,7 +1021,33 @@ static struct t_DisplayParams displayconfig[] = {
         .pwmfreq        = 10000,
         .brightness_min = 10,
         .brightness_max = 100,
-    },              
+    }, 
+    /* 70: Innolux G156HCE-L01 DUAL LVDS 24 bit 1920x1080 IMX.6 ONLY*/
+    {
+        .dispid    = 70,
+        .rezx      = 1920, 
+        .rezy      = 1080, 
+        .bpp       = 24,
+        
+        .pclk_freq = 70930,      // DUAL LVDS dispaly: this is the freq. of one single channel
+        .pclk_inv  = 1,			 //27.03.2017 inverted clock polarity due to IMX.6 bug
+        
+        .hs_fp     = 15, 
+        .hs_bp     = 90, 
+        .hs_w      = 1, 
+        .hs_inv    = 0,
+        
+        .vs_fp     = 10, 
+        .vs_bp     = 20, 
+        .vs_w      = 1, 
+        .vs_inv    = 0,
+        
+        .blank_inv      = 0,
+        
+        .pwmfreq        = 200,
+        .brightness_min = 10,
+        .brightness_max = 100,
+    },                               
     /* END OF LIST */
     {
       .dispid    = NODISPLAY,
